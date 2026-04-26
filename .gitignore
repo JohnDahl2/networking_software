@@ -45,4 +45,5 @@ env/
 .env.*.local
 # OS-specific files
 .DS_Store
-Thumbs.dbdocker-compose.override.yml
+Thumbs.db
+docker-compose.override.yml

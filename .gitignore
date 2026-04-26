@@ -45,4 +45,4 @@ env/
 .env.*.local
 # OS-specific files
 .DS_Store
-Thumbs.db
+Thumbs.dbdocker-compose.override.yml

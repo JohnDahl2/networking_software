@@ -1,9 +1,11 @@
-package main
+package db
 
 import (
 	"fmt"
 	"log"
 	"os"
+    "time"
+    "context"
 	"database/sql"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -29,5 +31,17 @@ func ConnectDB() {
 
     if err := goose.Up(DB, "migrations"); err != nil {
         log.Fatalf("Migration failed: %v", err)
+    }
+}
+
+func DatabaseWrite(t time.Time, length int) {
+    _, err := DB.ExecContext(context.Background(), 
+		"INSERT INTO packet_summary (time, length, info) VALUES ($1, $2, $3)",
+		t, length, "Initial Commit Packet")
+        
+        if err != nil {
+            log.Printf("DB Insert Error: %v\n", err)
+        } else {
+            fmt.Printf("Captured packet at %v, length %d stored.\n", t, length)
     }
 }

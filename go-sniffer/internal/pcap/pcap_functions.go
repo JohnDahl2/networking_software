@@ -1,11 +1,12 @@
-package main
+package pcap
 
 import (
 	"log"
 	"fmt"
 	"time"
-	"context"
 
+
+	"go-sniffer/internal/db"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/pcap"
 )
@@ -27,7 +28,7 @@ func findInterface() string {
 }
 
 
-func demoNetowrkReader() {
+func DemoNetowrkReader() {
 	device := findInterface()
 	snapshotLen := int32(1024)
 	promiscuous := false
@@ -43,18 +44,9 @@ func demoNetowrkReader() {
 	fmt.Printf("Sniffing on %s...\n", device)
 
 	for packet := range packetSource.Packets() {
-		// Just print and do a dummy insert for the first commit
 		t := packet.Metadata().Timestamp
 		length := packet.Metadata().Length
-
-		_, err := DB.ExecContext(context.Background(), 
-		"INSERT INTO packet_summary (time, length, info) VALUES ($1, $2, $3)",
-		t, length, "Initial Commit Packet")
-        
-        if err != nil {
-            log.Printf("DB Insert Error: %v\n", err)
-        } else {
-            fmt.Printf("Captured packet at %v, length %d stored.\n", t, length)
+		db.DatabaseWrite(t,length)
         }
 	}
-}
+

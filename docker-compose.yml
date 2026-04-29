@@ -2,11 +2,13 @@ services:
   sniffer:
     build: ./go-sniffer
     container_name: packet_sniffer_go
-    restart: unless-stopped
+    restart: "no" 
     network_mode: "host"
     cap_add:
       - NET_ADMIN
       - NET_RAW
+    volumes:
+      - ./go-sniffer/data:/app/data
     depends_on:
       db:
         condition: service_healthy

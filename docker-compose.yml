@@ -1,15 +1,14 @@
 services:
-  
   sniffer:
     build: ./go-sniffer
     container_name: packet_sniffer_go
-    restart: always
-    network_mode: "host" # Use host networking for direct access to network interfaces
+    restart: "no" 
+    network_mode: "host"
     cap_add:
       - NET_ADMIN
       - NET_RAW
-    environment:
-      - DATABASE_URL=postgres://postgres:password@localhost:5432/packets
+    volumes:
+      - ./go-sniffer/data:/app/data
     depends_on:
       db:
         condition: service_healthy
@@ -17,28 +16,24 @@ services:
   db:
     image: timescale/timescaledb:latest-pg16
     container_name: timescale_db
-    restart: always
-    environment:
-      - POSTGRES_PASSWORD=password
-      - POSTGRES_DB=packets
-    ports:
-      - "5432:5432"
+    restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d packets"]
       interval: 5s
       timeout: 5s
       retries: 5
     volumes:
-      - ./data/postgres:/var/lib/postgresql/data
+      - db_data:/var/lib/postgresql/data
 
   ui:
     build: ./python-ui
     container_name: packet_ui_python
-    restart: always
+    restart: unless-stopped
     ports:
-      - "8501:8501" # Default for Streamlit
-    environment:
-      - DATABASE_URL=postgres://postgres:password@db:5432/packets
+      - "8501:8501"
     depends_on:
       db:
         condition: service_healthy
+
+volumes:
+  db_data:

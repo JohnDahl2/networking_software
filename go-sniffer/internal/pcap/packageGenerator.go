@@ -105,8 +105,22 @@ func PackageGenerator() {
     size, _ := strconv.Atoi(sizeStr)
     if size == 0 { size = 10 } 
 
+	matches, err := filepath.Glob(filepath.Join(dumb_data_folder, "*.pcap"))
+	if err != nil {
+		fmt.Printf("Error checking for files: %v\n", err)
+		return
+	}
+
+	currentCount := len(matches)
+
+	if currentCount < count {
+		count = count - currentCount
+	} else {
+		return
+	}
+
     fmt.Println("--- Starting PCAP Generation Job ---")
-    err := generatePcapFiles(count, size, dumb_data_folder)
+    err = generatePcapFiles(count, size, dumb_data_folder)
     if err != nil {
         fmt.Printf("Generator Error: %v\n", err)
         return

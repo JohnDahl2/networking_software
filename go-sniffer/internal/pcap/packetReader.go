@@ -3,12 +3,9 @@ package pcap
 
 import (
     "io"
-    "time"
     "log"
 	"os"
 	"bufio"
-	"fmt"
-	"path/filepath"
 
 	"github.com/google/gopacket/pcapgo"
 )
@@ -36,33 +33,10 @@ func PcapReader(path string) int {
             break
         }
         if err != nil {
-            continue // Skip corrupted packets
+            continue
         }
         count++
     }
     return count
 }
 
-
-func ProcessAllPcaps() {
-    start := time.Now()
-    pathPattern := filepath.Join("data", "dumb_data", "*.pcap")
-    files, err := filepath.Glob(pathPattern)
-    if err != nil {
-        log.Fatal(err)
-    }
-
-    fmt.Printf("--- Found %d files to process ---\n", len(files))
-
-    for _, file := range files {
-        fmt.Printf("Processing %s... ", file)
-        
-        packetCount := PcapReader(file)
-        
-        fmt.Printf("Done. Found %d packets.\n", packetCount)
-    }
-    
-    duration := time.Since(start)
-    fmt.Printf("--- Processed %d files in %v ---\n", len(files), duration)
-
-}

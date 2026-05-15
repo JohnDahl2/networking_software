@@ -14,6 +14,35 @@ import (
 
 var DB *sql.DB
 
+type PacketRow struct {
+    Timestamp time.Time
+    Length    int
+}
+
+func BulkDatabaseWrite(ctx context.Context, rows []PacketRow) error {
+    if len(rows) == 0 {
+        return nil
+    }
+
+    numCols := 3
+    placeholderCount := 1
+    values := make([]interface{}, 0, len(rows)*numCols)
+    query := "INSERT INTO packet_summary (time, length, info) VALUES "
+
+    for i, row := range rows {
+        if i > 0 {
+            query += ","
+        }
+        query += fmt.Sprintf("($%d, $%d, $%d)", placeholderCount, placeholderCount+1, placeholderCount+2)
+        
+        values = append(values, row.Timestamp, row.Length, "Bulk Inserted Packet")
+        placeholderCount += numCols
+    }
+
+    _, err := DB.ExecContext(ctx, query, values...)
+    return err
+}
+
 func ConnectDB() {
     var err error
     connStr := os.Getenv("DATABASE_URL")
@@ -31,17 +60,5 @@ func ConnectDB() {
 
     if err := goose.Up(DB, "migrations"); err != nil {
         log.Fatalf("Migration failed: %v", err)
-    }
-}
-
-func DatabaseWrite(t time.Time, length int) {
-    _, err := DB.ExecContext(context.Background(), 
-		"INSERT INTO packet_summary (time, length, info) VALUES ($1, $2, $3)",
-		t, length, "Initial Commit Packet")
-        
-        if err != nil {
-            log.Printf("DB Insert Error: %v\n", err)
-        } else {
-            fmt.Printf("Captured packet at %v, length %d stored.\n", t, length)
     }
 }

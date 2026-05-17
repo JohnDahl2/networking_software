@@ -6,6 +6,7 @@ import (
 	"os"
     "time"
     "context"
+    "strings"
 	"database/sql"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -24,23 +25,26 @@ func BulkDatabaseWrite(ctx context.Context, rows []PacketRow) error {
         return nil
     }
 
-    numCols := 3
-    placeholderCount := 1
+    const numCols = 3
+    // Use a Builder to avoid massive memory allocations
+    var queryBuilder strings.Builder
+    queryBuilder.WriteString("INSERT INTO packet_summary (time, length, info) VALUES ")
+    
     values := make([]interface{}, 0, len(rows)*numCols)
-    query := "INSERT INTO packet_summary (time, length, info) VALUES "
 
     for i, row := range rows {
         if i > 0 {
-            query += ","
+            queryBuilder.WriteString(",")
         }
-        query += fmt.Sprintf("($%d, $%d, $%d)", placeholderCount, placeholderCount+1, placeholderCount+2)
+        // Manually calculate placeholders without Sprintf for speed
+        p1, p2, p3 := i*numCols+1, i*numCols+2, i*numCols+3
+        queryBuilder.WriteString(fmt.Sprintf("($%d, $%d, $%d)", p1, p2, p3))
         
         values = append(values, row.Timestamp, row.Length, "Bulk Inserted Packet")
-        placeholderCount += numCols
     }
 
-    _, err := DB.ExecContext(ctx, query, values...)
-    return err
+    _, err := DB.ExecContext(ctx, queryBuilder.String(), values...)
+	return err
 }
 
 func ConnectDB() {

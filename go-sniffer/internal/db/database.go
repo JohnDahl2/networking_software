@@ -6,6 +6,7 @@ import (
 	"os"
     "time"
     "context"
+    "strings"
 	"database/sql"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -13,6 +14,38 @@ import (
 )
 
 var DB *sql.DB
+
+type PacketRow struct {
+    Timestamp time.Time
+    Length    int
+}
+
+func BulkDatabaseWrite(ctx context.Context, rows []PacketRow) error {
+    if len(rows) == 0 {
+        return nil
+    }
+
+    const numCols = 3
+    // Use a Builder to avoid massive memory allocations
+    var queryBuilder strings.Builder
+    queryBuilder.WriteString("INSERT INTO packet_summary (time, length, info) VALUES ")
+    
+    values := make([]interface{}, 0, len(rows)*numCols)
+
+    for i, row := range rows {
+        if i > 0 {
+            queryBuilder.WriteString(",")
+        }
+        // Manually calculate placeholders without Sprintf for speed
+        p1, p2, p3 := i*numCols+1, i*numCols+2, i*numCols+3
+        queryBuilder.WriteString(fmt.Sprintf("($%d, $%d, $%d)", p1, p2, p3))
+        
+        values = append(values, row.Timestamp, row.Length, "Bulk Inserted Packet")
+    }
+
+    _, err := DB.ExecContext(ctx, queryBuilder.String(), values...)
+	return err
+}
 
 func ConnectDB() {
     var err error
@@ -31,17 +64,5 @@ func ConnectDB() {
 
     if err := goose.Up(DB, "migrations"); err != nil {
         log.Fatalf("Migration failed: %v", err)
-    }
-}
-
-func DatabaseWrite(t time.Time, length int) {
-    _, err := DB.ExecContext(context.Background(), 
-		"INSERT INTO packet_summary (time, length, info) VALUES ($1, $2, $3)",
-		t, length, "Initial Commit Packet")
-        
-        if err != nil {
-            log.Printf("DB Insert Error: %v\n", err)
-        } else {
-            fmt.Printf("Captured packet at %v, length %d stored.\n", t, length)
     }
 }

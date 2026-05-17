@@ -2,30 +2,17 @@ package main
 
 import (
 	"os"
-	"fmt"
-	"time"
-	"path/filepath"
-
-    // "go-sniffer/internal/db"
-	"go-sniffer/internal/pcap" 
+    "time"
+    "path/filepath"
+    "fmt"
+    "sync"
+    "go-sniffer/internal/db"
+	"go-sniffer/internal/pcap"
+    "go-sniffer/internal/worker"
 )
 
-func worker(id int, jobs <-chan string, results chan<- int) {
-    for path := range jobs {
-        fmt.Printf("Worker %d: starting file %s\n", id, path)
-        
-        // Use your existing PcapReader logic here
-        count := pcap.PcapReader(path)
-        
-        fmt.Printf("Worker %d: finished %s with %d packets\n", id, path, count)
-        
-        // Send the result back through the results channel
-        results <- count
-    }
-}
 
-
-func ProcessWithPool(workerCount int) {
+func ProcessWithPool(workerReaderCount int, workerSaverCount int) {
 
 	start := time.Now()
 
@@ -37,52 +24,46 @@ func ProcessWithPool(workerCount int) {
     absPath, _ := filepath.Abs(pcapDir)
     fmt.Printf("DEBUG: Looking for pcaps in: %s\n", absPath)
 
-    filePaths, err := filepath.Glob(filepath.Join(pcapDir, "*.pcap"))
-    if err != nil {
-        fmt.Printf("Glob error: %v\n", err)
-        return
-    }
+    filePaths, _ := filepath.Glob(filepath.Join(pcapDir, "*.pcap"))
+    jobs := make(chan string, len(filePaths)) 
+    packetStream := make(chan []string, 100) 
+    finalCounts := make(chan int, workerSaverCount)
 
-    if len(filePaths) == 0 {
-        fmt.Printf("Warning: No files found in %s\n", pcapDir)
-        return
-    }
-    // 1. Create the channels
-    jobs := make(chan string, len(filePaths)) // Buffered to hold all files
-    results := make(chan int, len(filePaths))
+    var wg sync.WaitGroup
 
-    // 2. Start the workers
-    for w := 1; w <= workerCount; w++ {
-        go worker(w, jobs, results)
+    for w := 1; w <= workerSaverCount; w++ {
+        go worker.PacketSaverWorker(w, packetStream, finalCounts)
     }
-
-    // 3. Send the jobs (file paths) into the channel
+    for w := 1; w <= workerReaderCount; w++ {
+        wg.Add(1)
+        go worker.PcapWorker(w, jobs, packetStream, &wg)
+    }
     for _, path := range filePaths {
         jobs <- path
     }
-    close(jobs) // This tells workers: "No more work coming!"
+    close(jobs)
 
-    // 4. Collect the results
+    go func() {
+        wg.Wait()
+        close(packetStream)
+    }()
+
     totalPackets := 0
-    for a := 1; a <= len(filePaths); a++ {
-        totalPackets += <-results
+    for i := 0; i < workerSaverCount; i++ {
+        totalPackets += <-finalCounts
     }
 
     fmt.Printf("--- Total Packets across all files: %d ---\n", totalPackets)
-	duration := time.Since(start)
+    duration := time.Since(start)
     fmt.Printf("--- Processed %d files in %v ---\n", len(filePaths), duration)
 }
 
-func main() {
-	// db.ConnectDB()
-	// if db.DB != nil {
-    //     defer db.DB.Close()
-    // }
 
+func main() {
+    db.ConnectDB()
 	demo_mode := os.Getenv("DEMO_MODE")
 	if demo_mode == "true" {
 		pcap.PackageGenerator()
 	}
-	pcap.ProcessAllPcaps()
-	ProcessWithPool(2)
+	ProcessWithPool(2, 2)
 }

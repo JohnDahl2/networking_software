@@ -5,6 +5,7 @@ import (
     "time"
     "path/filepath"
     "fmt"
+    "context"
     "sync"
     "go-sniffer/internal/db"
 	"go-sniffer/internal/pcap"
@@ -13,8 +14,10 @@ import (
 
 
 func ProcessWithPool(workerReaderCount int, workerSaverCount int) {
-
 	start := time.Now()
+
+    ctx, cancel := context.WithCancel(context.Background())
+    defer cancel()
 
 	pcapDir := os.Getenv("PCAP_SOURCE_DIR")
     if pcapDir == "" {
@@ -32,11 +35,11 @@ func ProcessWithPool(workerReaderCount int, workerSaverCount int) {
     var wg sync.WaitGroup
 
     for w := 1; w <= workerSaverCount; w++ {
-        go worker.PacketSaverWorker(w, packetStream, finalCounts)
+        go worker.PacketSaverWorker(ctx, w, packetStream, finalCounts, cancel)
     }
     for w := 1; w <= workerReaderCount; w++ {
         wg.Add(1)
-        go worker.PcapWorker(w, jobs, packetStream, &wg)
+        go worker.PcapWorker(ctx, w, jobs, packetStream, &wg)
     }
     for _, path := range filePaths {
         jobs <- path

@@ -7,38 +7,49 @@ import (
     "go-sniffer/internal/db"
 )
 
-func PacketSaverWorker(id int, packetStream <-chan []string, results chan<- int) {
+func PacketSaverWorker(ctx context.Context, id int, packetStream <-chan []string, results chan<- int, cancel context.CancelFunc) {
     const targetBatchSize = 1000
     currentBatch := make([]db.PacketRow, 0, targetBatchSize)
-    totalSaved := 0 // We'll use this name consistently
+    totalSaved := 0
 
-    for incomingSlice := range packetStream {
-        for _, pData := range incomingSlice {
-            currentBatch = append(currentBatch, db.PacketRow{
-                Timestamp: time.Now(),
-                Length:    len(pData),
-            })
+    defer func() {
+        if len(currentBatch) > 0 {
+            flushCtx, flushCancel := context.WithTimeout(context.Background(), 2*time.Second)
+            defer flushCancel()
 
-            if len(currentBatch) >= targetBatchSize {
-                if err := db.BulkDatabaseWrite(context.Background(), currentBatch); err != nil {
-                    fmt.Printf("Saver %d error: %v\n", id, err)
-                } else {
+            if err := db.BulkDatabaseWrite(flushCtx, currentBatch); err == nil {
+                totalSaved += len(currentBatch)
+            } else {
+                fmt.Printf("Saver %d final emergency flush error: %v\n", id, err)
+            }
+        }
+        results <- totalSaved
+    }()
+
+    for {
+        select {
+        case <-ctx.Done():
+            fmt.Printf("Saver %d: Context cancelled. Initiating graceful shutdown...\n", id)
+            return
+        case incomingSlice, ok := <-packetStream:
+            if !ok {
+                return
+            }
+            for _, pData := range incomingSlice {
+                currentBatch = append(currentBatch, db.PacketRow{
+                    Timestamp: time.Now(),
+                    Length:    len(pData),
+                })
+                if len(currentBatch) >= targetBatchSize {
+                    if err := db.BulkDatabaseWrite(ctx, currentBatch); err != nil {
+                        fmt.Printf("Saver %d database write failed: %v\n", id, err)
+                        cancel()
+                        return   
+                    }
                     totalSaved += len(currentBatch)
+                    currentBatch = currentBatch[:0]
                 }
-                currentBatch = currentBatch[:0]
             }
         }
     }
-
-    // Handle the final "leftover" packets after the channel closes
-    if len(currentBatch) > 0 {
-        err := db.BulkDatabaseWrite(context.Background(), currentBatch)
-        if err == nil {
-            totalSaved += len(currentBatch) // Use totalSaved here
-        } else {
-            fmt.Printf("Saver %d final batch error: %v\n", id, err)
-        }
-    }
-    
-    results <- totalSaved // Send the consistent variable name
 }

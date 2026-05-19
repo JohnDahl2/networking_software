@@ -4,9 +4,10 @@ import (
 	"os"
     "time"
     "path/filepath"
-    "fmt"
     "context"
     "sync"
+    "log/slog"
+    "strings"
     "go-sniffer/internal/db"
 	"go-sniffer/internal/pcap"
     "go-sniffer/internal/worker"
@@ -25,7 +26,7 @@ func ProcessWithPool(workerReaderCount int, workerSaverCount int) {
     }
 
     absPath, _ := filepath.Abs(pcapDir)
-    fmt.Printf("DEBUG: Looking for pcaps in: %s\n", absPath)
+    slog.Debug("Looking for pcaps in", "File:", absPath)
 
     filePaths, _ := filepath.Glob(filepath.Join(pcapDir, "*.pcap"))
     jobs := make(chan string, len(filePaths)) 
@@ -55,14 +56,27 @@ func ProcessWithPool(workerReaderCount int, workerSaverCount int) {
     for i := 0; i < workerSaverCount; i++ {
         totalPackets += <-finalCounts
     }
-
-    fmt.Printf("--- Total Packets across all files: %d ---\n", totalPackets)
-    duration := time.Since(start)
-    fmt.Printf("--- Processed %d files in %v ---\n", len(filePaths), duration)
+    slog.Debug("All done with packets", "Total packets", totalPackets, "Total files", len(filePaths), "Total Time for processesing", time.Since(start).String())
 }
 
 
 func main() {
+    var programLevel slog.Level
+    switch strings.ToUpper(os.Getenv("LOG_LEVEL")) {
+	case "DEBUG":
+		programLevel = slog.LevelDebug // Detailed troubleshooting info
+	case "WARN":
+		programLevel = slog.LevelWarn  // Warnings
+	case "ERROR":
+		programLevel = slog.LevelError // Critical issues
+	default:
+		programLevel = slog.LevelInfo  // Standard operational logs (Default)
+	}
+    opts := &slog.HandlerOptions{
+		Level: programLevel,
+	}
+    logger := slog.New(slog.NewJSONHandler(os.Stdout, opts))
+	slog.SetDefault(logger)
     db.ConnectDB()
 	demo_mode := os.Getenv("DEMO_MODE")
 	if demo_mode == "true" {

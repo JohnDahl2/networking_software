@@ -2,12 +2,12 @@ package db
 
 import (
 	"fmt"
-	"log"
 	"os"
     "time"
     "context"
     "strings"
 	"database/sql"
+    "log/slog"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
@@ -22,6 +22,7 @@ type PacketRow struct {
 
 func BulkDatabaseWrite(ctx context.Context, rows []PacketRow) error {
     if len(rows) == 0 {
+        slog.Debug("There was no rows to upload")
         return nil
     }
 
@@ -44,7 +45,11 @@ func BulkDatabaseWrite(ctx context.Context, rows []PacketRow) error {
     }
 
     _, err := DB.ExecContext(ctx, queryBuilder.String(), values...)
-	return err
+    if err != nil {
+        slog.Error("bulk database write failed", "error", err.Error())
+        return err
+    }
+    return nil
 }
 
 func ConnectDB() {
@@ -53,16 +58,17 @@ func ConnectDB() {
 
     DB, err = sql.Open("pgx", connStr)
     if err != nil {
-        log.Fatalf("Unable to connect to database: %v\n", err)
+        slog.Error("unable to initialize database pool", "error", err.Error())
     }
 
-    fmt.Println("Connected to TimescaleDB!")
+    slog.Info("Db connected")
 
     if err := goose.SetDialect("postgres"); err != nil {
-        log.Fatalf("Failed to set goose dialect: %v", err)
+        slog.Error("Unable to set goose:","error", err.Error())
     }
 
     if err := goose.Up(DB, "migrations"); err != nil {
-        log.Fatalf("Migration failed: %v", err)
+        slog.Error("Unable to migrate:","error", err.Error())
     }
+    slog.Info("database migrations applied successfully")
 }

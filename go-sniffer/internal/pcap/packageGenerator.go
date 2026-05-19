@@ -3,6 +3,7 @@ package pcap
 import (
 	"bufio"
 	"fmt"
+	"log/slog" // Upgraded to structured logging
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -19,8 +20,10 @@ var dumb_data_folder string = "./data/dumb_data"
 
 func ensureDir(dirName string) {
 	if _, err := os.Stat(dirName); os.IsNotExist(err) {
-		fmt.Printf("Folder %s not found. Creating it...\n", dirName)
-		os.MkdirAll(dirName, 0755)
+		slog.Info("target directory not found; creating it now", "directory", dirName)
+		if err := os.MkdirAll(dirName, 0755); err != nil {
+			slog.Error("failed to create directory path", "directory", dirName, "error", err.Error())
+		}
 	}
 }
 
@@ -30,7 +33,7 @@ func GenerateDummyPcap(filename string, packetCount int, wg *sync.WaitGroup) {
 
 	f, err := os.Create(filename)
 	if err != nil {
-		fmt.Printf("Error creating %s: %v\n", filename, err)
+		slog.Error("failed to create dummy pcap target file", "file_path", filename, "error", err.Error())
 		return
 	}
 	defer f.Close()
@@ -38,7 +41,7 @@ func GenerateDummyPcap(filename string, packetCount int, wg *sync.WaitGroup) {
 	// Use a large 1MB buffer to maximize SSD write speed
 	bufferedWriter := bufio.NewWriterSize(f, 1024*1024)
 	writer := pcapgo.NewWriter(bufferedWriter)
-	writer.WriteFileHeader(65536, layers.LinkTypeEthernet)
+	_ = writer.WriteFileHeader(65536, layers.LinkTypeEthernet)
 
 	buffer := gopacket.NewSerializeBuffer()
 	options := gopacket.SerializeOptions{FixLengths: true, ComputeChecksums: true}
@@ -63,7 +66,7 @@ func GenerateDummyPcap(filename string, packetCount int, wg *sync.WaitGroup) {
 			SrcIP: srcIP, DstIP: dstIP,
 		}
 
-		gopacket.SerializeLayers(buffer, options, eth, ip, gopacket.Payload([]byte("rugged-refined-data")))
+		_ = gopacket.SerializeLayers(buffer, options, eth, ip, gopacket.Payload([]byte("rugged-refined-data")))
 		
 		info := gopacket.CaptureInfo{
 			Timestamp:      timestamp,
@@ -71,13 +74,15 @@ func GenerateDummyPcap(filename string, packetCount int, wg *sync.WaitGroup) {
 			Length:         len(buffer.Bytes()),
 		}
 		
-		writer.WritePacket(info, buffer.Bytes())
+		_ = writer.WritePacket(info, buffer.Bytes())
 		timestamp = timestamp.Add(time.Microsecond)
 	}
 
-	bufferedWriter.Flush()
-	f.Sync()
-	fmt.Printf("✓ Generated: %s\n", filepath.Base(filename))
+	_ = bufferedWriter.Flush()
+	_ = f.Sync()
+	
+	// Clean structural feedback when a worker finishes its disk writes
+	slog.Info("dummy pcap file generation complete", "file_name", filepath.Base(filename))
 }
 
 func PackageGenerator() {
@@ -91,14 +96,20 @@ func PackageGenerator() {
 	
 	matches, _ := filepath.Glob(filepath.Join(dumb_data_folder, "*.pcap"))
 	if len(matches) >= count {
-		fmt.Println("Existing dummy data meets requirements. Skipping generation.")
+		slog.Info("existing dummy data meets requirements; skipping mock generation", 
+			"found_files", len(matches), 
+			"required_count", count,
+		)
 		return
 	}
 
 	needed := count - len(matches)
 	packetsPerFile := size * 1250 // Roughly 1MB = 1250 packets with overhead
 
-	fmt.Printf("--- Starting Job: Generating %d files (%d MB each) ---\n", needed, size)
+	slog.Info("starting dummy file generation job", 
+		"files_remaining_to_generate", needed, 
+		"target_file_size_mb", size,
+	)
 	
 	var wg sync.WaitGroup
 	for i := 1; i <= needed; i++ {
@@ -109,5 +120,5 @@ func PackageGenerator() {
 	}
 
 	wg.Wait()
-	fmt.Println("--- All Files Ready for Stress Test ---")
+	slog.Info("all dummy data generation files are ready for pipeline stress testing")
 }

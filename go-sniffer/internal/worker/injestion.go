@@ -1,94 +1,104 @@
 package worker
 
 import (
-    "io"
-	"fmt"
-    "os"
-    "bufio"
-    "sync"
-    "context"
+	"bufio"
+	"context"
+	"io"
+	"log/slog" // Upgraded to structured logging
+	"os"
+	"sync"
 
-    "github.com/google/gopacket/pcapgo"
+	"github.com/google/gopacket/pcapgo"
 )
 
 func PcapWorker(ctx context.Context, id int, jobs <-chan string, packetStream chan<- []string, wg *sync.WaitGroup) {
-    defer wg.Done()
+	defer wg.Done()
 
-    for path := range jobs {
-        // 1. ALWAYS check if the system-wide context was cancelled BEFORE starting a new file
-        select {
-        case <-ctx.Done():
-            fmt.Printf("Worker %d: Stopping early, pipeline context cancelled.\n", id)
-            return
-        default:
-            // Keep going normally if context is active
-        }
+	// Create a localized contextual logger for this reader thread.
+	// Every log line called with 'log.' will automatically include the "reader_id" key.
+	log := slog.With("reader_id", id)
 
-        batchLimit := 500
-        
-        err := func(p string) error {
-            fmt.Printf("Worker %d: starting file %s\n", id, p)
-            f, err := os.Open(p)
-            if err != nil {
-                return err
-            }
-            defer f.Close() // Safely closes right when this anonymous function ends
+	for path := range jobs {
+		// 1. ALWAYS check if the system-wide context was cancelled BEFORE starting a new file
+		select {
+		case <-ctx.Done():
+			log.Warn("pipeline context cancelled; stopping reader thread early")
+			return
+		default:
+			// Keep going normally if context is active
+		}
 
-            bufferedReader := bufio.NewReader(f)
-            reader, err := pcapgo.NewReader(bufferedReader)
-            if err != nil {
-                return err
-            }
+		batchLimit := 500
+		
+		err := func(p string) error {
+			// Set to DEBUG level so file rotation logs stay out of standard production noise
+			log.Debug("starting file extraction sequence", "file_path", p)
+			
+			f, err := os.Open(p)
+			if err != nil {
+				return err
+			}
+			defer f.Close() // Safely closes right when this anonymous function ends
 
-            currentBatch := make([]string, 0, batchLimit)
+			bufferedReader := bufio.NewReader(f)
+			reader, err := pcapgo.NewReader(bufferedReader)
+			if err != nil {
+				return err
+			}
 
-            for {
-                // 2. For massive files, check context inside the packet loop too
-                // This ensures a 5GB file can stop instantly if you hit Ctrl+C
-                if len(currentBatch) == 0 { // Check periodically, not on every single packet
-                    select {
-                    case <-ctx.Done():
-                        return ctx.Err()
-                    default:
-                    }
-                }
+			currentBatch := make([]string, 0, batchLimit)
 
-                data, _, err := reader.ReadPacketData()
-                if err == io.EOF {
-                    break
-                }
-                if err != nil {
-                    continue // Skip corrupted packets within a good file
-                }
+			for {
+				// 2. For massive files, check context inside the packet loop periodically
+				if len(currentBatch) == 0 { 
+					select {
+					case <-ctx.Done():
+						return ctx.Err()
+					default:
+					}
+				}
 
-                currentBatch = append(currentBatch, string(data))
-                if len(currentBatch) >= batchLimit {
-                    // 3. Make sure channel sends respect context cancellation
-                    select {
-                    case packetStream <- currentBatch:
-                    case <-ctx.Done():
-                        return ctx.Err()
-                    }
-                    currentBatch = make([]string, 0, batchLimit)
-                }
-            }
-            if len(currentBatch) > 0 {
-                select {
-                case packetStream <- currentBatch:
-                case <-ctx.Done():
-                    return ctx.Err()
-                }
-            }
+				data, _, err := reader.ReadPacketData()
+				if err == io.EOF {
+					break
+				}
+				if err != nil {
+					// Use the sub-logger here to note a single corrupted packet
+					log.Debug("skipping corrupted packet within valid file structure", "file_path", p, "error", err.Error())
+					continue 
+				}
 
-            return nil
-        }(path)
+				currentBatch = append(currentBatch, string(data))
+				if len(currentBatch) >= batchLimit {
+					// 3. Make sure channel sends respect context cancellation
+					select {
+					case packetStream <- currentBatch:
+					case <-ctx.Done():
+						return ctx.Err()
+					}
+					currentBatch = make([]string, 0, batchLimit)
+				}
+			}
+			
+			if len(currentBatch) > 0 {
+				select {
+				case packetStream <- currentBatch:
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			}
 
-        // 4. Clean, isolated error tracking
-        if err != nil {
-            // Since we don't have a logger yet, standard printing works perfectly.
-            // Because we don't panic or return here, the loop moves directly 
-            // to the NEXT path in the jobs channel. The worker survives!
-            fmt.Printf("ERR: Worker %d failed to process file %s: %v\n", id, path, err)
-        }
-    }
+			return nil
+		}(path)
+
+		// 4. Clean, isolated error tracking
+		if err != nil {
+			// If the error was just a deliberate context cancellation, log it as a quiet note, not a massive error failure
+			if ctx.Err() != nil {
+				log.Debug("file extraction aborted cleanly by application context shutdown", "file_path", path)
+			} else {
+				log.Error("failed to process target pcap file completely", "file_path", path, "error", err.Error())
+			}
+		}
+	}
 }

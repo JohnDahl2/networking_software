@@ -4,12 +4,15 @@ import (
 	"bufio"
 	"context"
 	"io"
-	"log/slog" // Upgraded to structured logging
+	"log/slog"
+    "sync/atomic"
 	"os"
 	"sync"
 
 	"github.com/google/gopacket/pcapgo"
 )
+
+var TotalPacketsRead int64
 
 func PcapWorker(ctx context.Context, id int, jobs <-chan string, packetStream chan<- []string, wg *sync.WaitGroup) {
 	defer wg.Done()
@@ -67,7 +70,6 @@ func PcapWorker(ctx context.Context, id int, jobs <-chan string, packetStream ch
 					log.Debug("skipping corrupted packet within valid file structure", "file_path", p, "error", err.Error())
 					continue 
 				}
-
 				currentBatch = append(currentBatch, string(data))
 				if len(currentBatch) >= batchLimit {
 					// 3. Make sure channel sends respect context cancellation
@@ -76,7 +78,8 @@ func PcapWorker(ctx context.Context, id int, jobs <-chan string, packetStream ch
 					case <-ctx.Done():
 						return ctx.Err()
 					}
-					currentBatch = make([]string, 0, batchLimit)
+                    atomic.AddInt64(&TotalPacketsRead, int64(len(currentBatch)))
+                    currentBatch = make([]string, 0, batchLimit)
 				}
 			}
 			
@@ -86,6 +89,7 @@ func PcapWorker(ctx context.Context, id int, jobs <-chan string, packetStream ch
 				case <-ctx.Done():
 					return ctx.Err()
 				}
+                atomic.AddInt64(&TotalPacketsRead, int64(len(currentBatch)))
 			}
 
 			return nil

@@ -7,6 +7,7 @@ import (
     "context"
     "sync"
     "log/slog"
+    "sync/atomic"
     "strings"
     "go-sniffer/internal/db"
 	"go-sniffer/internal/pcap"
@@ -56,7 +57,28 @@ func ProcessWithPool(workerReaderCount int, workerSaverCount int) {
     for i := 0; i < workerSaverCount; i++ {
         totalPackets += <-finalCounts
     }
+    
+    durationSeconds := time.Since(start).Seconds()
+    finalReadCount  := atomic.LoadInt64(&worker.TotalPacketsRead)
+    finalSavedCount := atomic.LoadInt64(&worker.TotalSavedPackets)
+
     slog.Debug("All done with packets", "Total packets", totalPackets, "Total files", len(filePaths), "Total Time for processesing", time.Since(start).String())
+
+    var readPPS, writePPS float64
+    if durationSeconds > 0 {
+        readPPS  = float64(finalReadCount) / durationSeconds
+        writePPS = float64(finalSavedCount) / durationSeconds
+    }
+
+    slog.Info("pipeline processing performance report",
+        "status",                  "success",
+        "total_files",             len(filePaths),
+        "duration_seconds",        durationSeconds,
+        "total_packets_read",      finalReadCount,
+        "packets_read_per_sec",    readPPS,       
+        "total_packets_inserted",  finalSavedCount,
+        "packets_saved_per_sec",   writePPS,      
+    )
 }
 
 

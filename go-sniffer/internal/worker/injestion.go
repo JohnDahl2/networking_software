@@ -8,41 +8,41 @@ import (
 	"strings"
     "sync/atomic"
 	"os"
+	"net/netip"
 	"sync"
 
+	"go-sniffer/internal/db"
+
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/google/gopacket"
+	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcapgo"
 )
 
 var TotalPacketsRead int64
 
-func PcapWorker(ctx context.Context, id int, jobs <-chan string, packetStream chan<- []string, wg *sync.WaitGroup) {
+func PcapWorker(ctx context.Context, id int, jobs <-chan string, packetStream chan<- []db.PacketRow, wg *sync.WaitGroup) {
 	defer wg.Done()
-
-	// Create a localized contextual logger for this reader thread.
-	// Every log line called with 'log.' will automatically include the "reader_id" key.
 	log := slog.With("reader_id", id)
 
 	for path := range jobs {
-		// 1. ALWAYS check if the system-wide context was cancelled BEFORE starting a new file
 		select {
 		case <-ctx.Done():
 			log.Warn("pipeline context cancelled; stopping reader thread early")
 			return
 		default:
-			// Keep going normally if context is active
 		}
 
 		batchLimit := 500
 		
 		err := func(p string) error {
-			// Set to DEBUG level so file rotation logs stay out of standard production noise
 			log.Debug("starting file extraction sequence", "file_path", p)
 			
 			f, err := os.Open(p)
 			if err != nil {
 				return err
 			}
-			defer f.Close() // Safely closes right when this anonymous function ends
+			defer f.Close()
 
 			bufferedReader := bufio.NewReader(f)
 			reader, err := pcapgo.NewReader(bufferedReader)
@@ -50,10 +50,9 @@ func PcapWorker(ctx context.Context, id int, jobs <-chan string, packetStream ch
 				return err
 			}
 
-			currentBatch := make([]string, 0, batchLimit)
+			currentBatch := make([]db.PacketRow, 0, batchLimit)
 
 			for {
-				// 2. For massive files, check context inside the packet loop periodically
 				if len(currentBatch) == 0 { 
 					select {
 					case <-ctx.Done():
@@ -62,31 +61,83 @@ func PcapWorker(ctx context.Context, id int, jobs <-chan string, packetStream ch
 					}
 				}
 
-				data, _, err := reader.ReadPacketData()
+				data, captureInfo, err := reader.ReadPacketData()
 				if err == io.EOF {
 					break
 				}
 				if err != nil {
-					// If the error message contains "EOF", it means we safely hit the end of the file 
-					// structure but the reader loop just wants to exit. Break out cleanly!
 					if strings.Contains(err.Error(), "EOF") {
 						break
 					}
-
-					// Real structural corruptions will still surface here cleanly
 					log.Debug("skipping corrupted packet within valid file structure", "file_path", p, "error", err.Error())
 					continue 
 				}
-				currentBatch = append(currentBatch, string(data))
+				packet := gopacket.NewPacket(data, reader.LinkType(), gopacket.Default)
+				var srcIP, dstIP netip.Addr
+				var srcPort, dstPort int32
+				var protocol string
+				var tcpFlags int16
+
+
+				if ipLayer := packet.Layer(layers.LayerTypeIPv4); ipLayer != nil {
+					ip := ipLayer.(*layers.IPv4)
+					protocol = ip.Protocol.String()
+					
+					// Convert the 4-byte array directly to a netip.Addr (Zero Allocations!)
+					srcIP = netip.AddrFrom4([4]byte(ip.SrcIP))
+					dstIP = netip.AddrFrom4([4]byte(ip.DstIP))
+					
+				} else if ipv6Layer := packet.Layer(layers.LayerTypeIPv6); ipv6Layer != nil {
+					ip := ipv6Layer.(*layers.IPv6)
+					protocol = ip.NextHeader.String()
+					
+					// Convert the 16-byte array directly to a netip.Addr
+					srcIP = netip.AddrFrom16([16]byte(ip.SrcIP))
+					dstIP = netip.AddrFrom16([16]byte(ip.DstIP))
+				} else {
+					// DIAGNOSTIC NOTE: If packets are still hitting NULL, this will tell us what layer 
+					// gopacket actually found instead of IP.
+					slog.Debug("packet missing expected network layer", "layers", packet.Layers())
+				}
+	
+				// 3. Extract Transport Layer (TCP or UDP)
+				if tcpLayer := packet.Layer(layers.LayerTypeTCP); tcpLayer != nil {
+					tcp, _ := tcpLayer.(*layers.TCP)
+					srcPort = int32(tcp.SrcPort)
+					dstPort = int32(tcp.DstPort)
+					
+					// Read the raw TCP flags byte mask directly (SYN, ACK, FIN, etc.)
+					tcpFlags = int16(packetFlagsToUint8(tcp)) 
+				} else if udpLayer := packet.Layer(layers.LayerTypeUDP); udpLayer != nil {
+					udp, _ := udpLayer.(*layers.UDP)
+					srcPort = int32(udp.SrcPort)
+					dstPort = int32(udp.DstPort)
+				}
+
+				row := db.PacketRow{
+					Time:     captureInfo.Timestamp, // Grab the actual time the packet hit the wire!
+					SrcIP:    srcIP,
+					DstIP:    dstIP,
+					SrcPort:  srcPort,
+					DstPort:  dstPort,
+					Protocol: protocol,
+					Length:   int32(captureInfo.Length),
+					TCPFlags: tcpFlags,
+					StreamID: pgtype.UUID{
+						Bytes: [16]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+						Valid: true,
+					},
+				}
+
+				currentBatch = append(currentBatch, row)
 				if len(currentBatch) >= batchLimit {
-					// 3. Make sure channel sends respect context cancellation
 					select {
 					case packetStream <- currentBatch:
 					case <-ctx.Done():
 						return ctx.Err()
 					}
                     atomic.AddInt64(&TotalPacketsRead, int64(len(currentBatch)))
-                    currentBatch = make([]string, 0, batchLimit)
+                    currentBatch = make([]db.PacketRow, 0, batchLimit)
 				}
 			}
 			
@@ -112,4 +163,16 @@ func PcapWorker(ctx context.Context, id int, jobs <-chan string, packetStream ch
 			}
 		}
 	}
+}
+
+
+func packetFlagsToUint8(tcp *layers.TCP) uint8 {
+    var mask uint8
+    if tcp.SYN { mask |= 1 << 1 }
+    if tcp.ACK { mask |= 1 << 4 }
+    if tcp.FIN { mask |= 1 << 0 }
+    if tcp.RST { mask |= 1 << 2 }
+    if tcp.PSH { mask |= 1 << 3 }
+    if tcp.URG { mask |= 1 << 5 }
+    return mask
 }

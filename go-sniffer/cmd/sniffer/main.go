@@ -9,6 +9,9 @@ import (
     "log/slog"
     "sync/atomic"
     "strings"
+    "database/sql"
+    _ "github.com/jackc/pgx/v5/stdlib" 
+    "github.com/pressly/goose/v3"
     "go-sniffer/internal/db"
 	"go-sniffer/internal/pcap"
     "go-sniffer/internal/worker"
@@ -31,7 +34,7 @@ func ProcessWithPool(workerReaderCount int, workerSaverCount int) {
 
     filePaths, _ := filepath.Glob(filepath.Join(pcapDir, "*.pcap"))
     jobs := make(chan string, len(filePaths)) 
-    packetStream := make(chan []string, 100) 
+    packetStream := make(chan []db.PacketRow, 100) 
     finalCounts := make(chan int, workerSaverCount)
 
     var wg sync.WaitGroup
@@ -81,28 +84,61 @@ func ProcessWithPool(workerReaderCount int, workerSaverCount int) {
     )
 }
 
+func RunMigrations(connString string) error {
+    // Goose needs a standard *sql.DB connection just to execute the migration SQL
+    db, err := sql.Open("pgx", connString)
+    if err != nil {
+        return err
+    }
+    defer db.Close()
+
+    // Tell goose where your SQL files live and run them
+    slog.Info("Running migrations")
+    return goose.Up(db, "./migrations")
+}
 
 func main() {
-    var programLevel slog.Level
+    var programLevel slog.Level // Need to set the logging level
     switch strings.ToUpper(os.Getenv("LOG_LEVEL")) {
 	case "DEBUG":
-		programLevel = slog.LevelDebug // Detailed troubleshooting info
+		programLevel = slog.LevelDebug 
 	case "WARN":
-		programLevel = slog.LevelWarn  // Warnings
+		programLevel = slog.LevelWarn 
 	case "ERROR":
-		programLevel = slog.LevelError // Critical issues
+		programLevel = slog.LevelError
 	default:
-		programLevel = slog.LevelInfo  // Standard operational logs (Default)
+		programLevel = slog.LevelInfo
 	}
     opts := &slog.HandlerOptions{
 		Level: programLevel,
 	}
     logger := slog.New(slog.NewJSONHandler(os.Stdout, opts))
 	slog.SetDefault(logger)
-    db.ConnectDB()
-	demo_mode := os.Getenv("DEMO_MODE")
-	if demo_mode == "true" {
+    connString := os.Getenv("DATABASE_URL")
+    if connString == "" {
+        connString = "postgres://postgres:postgres@localhost:5432/sniffer?sslmode=disable"
+    }
+
+    // CREATE A CONTEXT FOR STARTUP
+    ctx := context.Background()
+
+    // 1. Swap db.ConnectDB() out for your new thread-safe connection pool!
+    slog.Info("Connecting to TimescaleDB Pool...")
+    if err := db.InitDB(ctx, connString); err != nil {
+        slog.Error("Failed to initialize database pool, terminating", "error", err)
+        os.Exit(1)
+    }
+
+    // 2. Run Goose migrations using the same connection string
+    if err := RunMigrations(connString); err != nil {
+        slog.Error("Failed running schema migrations, terminating application", "error", err)
+        os.Exit(1)
+    }
+
+    demoMode := os.Getenv("DEMO_MODE")
+	if demoMode == "true" {
 		pcap.PackageGenerator()
 	}
+	
 	ProcessWithPool(2, 2)
 }

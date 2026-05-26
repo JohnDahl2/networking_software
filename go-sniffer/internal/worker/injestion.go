@@ -66,9 +66,13 @@ func PcapWorker(ctx context.Context, id int, jobs <-chan string, packetStream ch
 					break
 				}
 				if err != nil {
+					// If the error message contains "EOF", it means we safely hit the end of the file 
+					// structure but the reader loop just wants to exit. Break out cleanly!
 					if strings.Contains(err.Error(), "EOF") {
 						break
 					}
+
+					// Real structural corruptions will still surface here cleanly
 					log.Debug("skipping corrupted packet within valid file structure", "file_path", p, "error", err.Error())
 					continue 
 				}

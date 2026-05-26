@@ -7,11 +7,11 @@ services:
     cap_add:
       - NET_ADMIN
       - NET_RAW
-    # This replaces the entire environment block
     env_file:
       - .env
     volumes:
       - ./go-sniffer/data:/app/data
+      - ./go-sniffer/migrations:/app/migrations
     depends_on:
       db:
         condition: service_healthy
@@ -32,11 +32,14 @@ services:
       retries: 5
     volumes:
       - db_data:/var/lib/postgresql/data
-    command: >
-      postgres
-      -c max_wal_size=4GB
-      -c min_wal_size=1GB
-      -c checkpoint_timeout=15min
+    command: [
+      "postgres",
+      "-c", "synchronous_commit=off",
+      "-c", "shared_buffers=1GB",
+      "-c", "wal_writer_delay=200ms",
+      "-c", "checkpoint_completion_target=0.9",
+      "-c", "max_wal_size=4GB"
+    ]
 
   ui:
     build: ./python-ui

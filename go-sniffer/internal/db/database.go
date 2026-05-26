@@ -1,74 +1,66 @@
 package db
 
 import (
-	"fmt"
-	"os"
     "time"
     "context"
-    "strings"
-	"database/sql"
-    "log/slog"
+    "net/netip"
+
+    "github.com/jackc/pgx/v5/pgtype"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
-	"github.com/pressly/goose/v3"
+    "github.com/jackc/pgx/v5"
+    "github.com/jackc/pgx/v5/pgxpool"
 )
 
-var DB *sql.DB
 
-type PacketRow struct {
-    Timestamp time.Time
-    Length    int
+var DB *pgxpool.Pool
+
+func InitDB(ctx context.Context, connString string) error {
+    var err error
+    // Connect to TimescaleDB using a connection pool
+    DB, err = pgxpool.New(ctx, connString)
+    if err != nil {
+        return err
+    }
+    
+    // Verify the connection works
+    return DB.Ping(ctx)
 }
 
-func BulkDatabaseWrite(ctx context.Context, rows []PacketRow) error {
+type PacketRow struct {
+    Time         time.Time  `db:"time"`
+    SrcIP        netip.Addr `db:"src_ip"`
+    DstIP        netip.Addr `db:"dst_ip"`
+    SrcPort      int32      `db:"src_port"`
+    DstPort      int32      `db:"dst_port"`
+    Protocol     string     `db:"protocol"`
+    Length       int32      `db:"length"`
+    TCPFlags     int16      `db:"tcp_flags"`
+    StreamID     pgtype.UUID `db:"stream_id"`
+}
+
+func BulkDatabaseCopy(ctx context.Context, rows []PacketRow) error {
     if len(rows) == 0 {
-        slog.Debug("There was no rows to upload")
         return nil
     }
 
-    const numCols = 3
-    // Use a Builder to avoid massive memory allocations
-    var queryBuilder strings.Builder
-    queryBuilder.WriteString("INSERT INTO packet_summary (time, length, info) VALUES ")
-    
-    values := make([]interface{}, 0, len(rows)*numCols)
-
-    for i, row := range rows {
-        if i > 0 {
-            queryBuilder.WriteString(",")
-        }
-        // Manually calculate placeholders without Sprintf for speed
-        p1, p2, p3 := i*numCols+1, i*numCols+2, i*numCols+3
-        queryBuilder.WriteString(fmt.Sprintf("($%d, $%d, $%d)", p1, p2, p3))
-        
-        values = append(values, row.Timestamp, row.Length, "Bulk Inserted Packet")
+    // Prepare the multi-row data matrix
+    var inputRows [][]interface{}
+    for _, row := range rows {
+        inputRows = append(inputRows, []interface{}{
+            row.Time, row.SrcIP.String(), row.DstIP.String(), 
+            row.SrcPort, row.DstPort, row.Protocol, 
+            row.Length, row.TCPFlags, row.StreamID,
+        })
     }
 
-    _, err := DB.ExecContext(ctx, queryBuilder.String(), values...)
-    if err != nil {
-        slog.Error("bulk database write failed", "error", err.Error())
-        return err
-    }
-    return nil
+    // Stream the binary matrix straight into the database engine
+    _, err := DB.CopyFrom(
+        ctx,
+        pgx.Identifier{"packet_logs"},
+        []string{"time", "src_ip", "dst_ip", "src_port", "dst_port", "protocol", "length", "tcp_flags", "stream_id"},
+        pgx.CopyFromRows(inputRows),
+    )
+    return err
 }
 
-func ConnectDB() {
-    var err error
-    connStr := os.Getenv("DATABASE_URL")
-
-    DB, err = sql.Open("pgx", connStr)
-    if err != nil {
-        slog.Error("unable to initialize database pool", "error", err.Error())
-    }
-
-    slog.Info("Db connected")
-
-    if err := goose.SetDialect("postgres"); err != nil {
-        slog.Error("Unable to set goose:","error", err.Error())
-    }
-
-    if err := goose.Up(DB, "migrations"); err != nil {
-        slog.Error("Unable to migrate:","error", err.Error())
-    }
-    slog.Info("database migrations applied successfully")
-}

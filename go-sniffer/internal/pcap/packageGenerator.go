@@ -82,52 +82,42 @@ func GenerateDummyPcap(
         EthernetType: layers.EthernetTypeIPv4,
     }
 
-    ipLayer := &layers.IPv4{
-        Version: 4, 
-        TTL:     64,
-    }
-
     tcpLayer := &layers.TCP{}
-    udpLayer := &layers.UDP{}
 
     // The conveyor belt where gopacket flattens the layers into binary ones and zeros
 	buffer := gopacket.NewSerializeBuffer()
-	options := gopacket.SerializeOptions{FixLengths: true, ComputeChecksums: true}
+	options := gopacket.SerializeOptions{FixLengths: true, ComputeChecksums: false}
 	
     // -------------------------------------------------------------------------
     // STEP 3: THE GENERATION LOOP
     // -------------------------------------------------------------------------
     for i := 0; i < packetCount; i++ {
-        buffer.Clear() // Clear the conveyor belt for the next packet
+        buffer.Clear()
 
-        // 1. Pick a random profile blueprint (like choosing a random dict from a Python list)
         profile := profiles[rand.Intn(len(profiles))]
-
-        // 2. Populate the common IP layer fields using our blueprint data
-        ipLayer.SrcIP = profile.SrcIP
-        ipLayer.DstIP = profile.DstIP
+        ipLayer := &layers.IPv4{
+            Version:  4, 
+            TTL:      64, 
+            SrcIP:    profile.SrcIP, 
+            DstIP:    profile.DstIP,
+        }
 
         // 3. Look at the protocol key ("TCP" or "UDP") and use the correct strategy switch
         switch profile.Proto {
         case "TCP":
             ipLayer.Protocol = layers.IPProtocolTCP
 
-            // Configure the TCP envelope keys
+            *tcpLayer = layers.TCP{}
             tcpLayer.SrcPort = layers.TCPPort(profile.SrcPort)
             tcpLayer.DstPort = layers.TCPPort(profile.DstPort)
-            
-            // Map the TCP flags from our blueprint
             tcpLayer.SYN = profile.TCPFlags.SYN
             tcpLayer.ACK = profile.TCPFlags.ACK
             tcpLayer.RST = profile.TCPFlags.RST
             tcpLayer.FIN = profile.TCPFlags.FIN
 
-            // Real-world TCP control/error packets (like RST or FIN) don't have payloads
             if profile.PayloadMin == 0 {
-                // Nest the dolls: Ethernet -> IP -> TCP (No payload)
                 _ = gopacket.SerializeLayers(buffer, options, ethLayer, ipLayer, tcpLayer)
             } else {
-                // If a profile dictates a size, generate dynamic dummy payload bytes
                 payloadBytes := make([]byte, profile.PayloadMin+rand.Intn(profile.PayloadMax-profile.PayloadMin+1))
                 _ = gopacket.SerializeLayers(buffer, options, ethLayer, ipLayer, tcpLayer, gopacket.Payload(payloadBytes))
             }
@@ -135,19 +125,16 @@ func GenerateDummyPcap(
         case "UDP":
             ipLayer.Protocol = layers.IPProtocolUDP
 
-            // Calculate dynamic payload size based on the dict blueprint bounds
+            udpLayer := &layers.UDP{
+                SrcPort: layers.UDPPort(profile.SrcPort),
+                DstPort: layers.UDPPort(profile.DstPort),
+            }
+
             payloadSize := profile.PayloadMin
             if profile.PayloadMax > profile.PayloadMin {
                 payloadSize = profile.PayloadMin + rand.Intn(profile.PayloadMax-profile.PayloadMin+1)
             }
             payloadBytes := make([]byte, payloadSize)
-
-            // Configure the UDP envelope keys
-            udpLayer.SrcPort = layers.UDPPort(profile.SrcPort)
-            udpLayer.DstPort = layers.UDPPort(profile.DstPort)
-            //udpLayer.Length = uint16(8 + payloadSize) // 8 bytes for the UDP header itself + the payload size
-
-            // Nest the dolls: Ethernet -> IP -> UDP -> Payload
             _ = gopacket.SerializeLayers(buffer, options, ethLayer, ipLayer, udpLayer, gopacket.Payload(payloadBytes))
         }
 
@@ -159,11 +146,8 @@ func GenerateDummyPcap(
             CaptureLength:  len(buffer.Bytes()), // Size of the flattened binary data
             Length:         len(buffer.Bytes()),
         }
-        
-        // Feed the formatted packet into our 1MB RAM buffer
+
         _ = writer.WritePacket(info, buffer.Bytes())
-        
-        // Tick our private clock forward by 10ms for the next packet
         packetTime = packetTime.Add(10 * time.Millisecond)
     }
 

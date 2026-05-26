@@ -3,7 +3,7 @@ package pcap
 import (
 	"bufio"
 	"fmt"
-	"log/slog" // Upgraded to structured logging
+	"log/slog"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -18,6 +18,24 @@ import (
 
 var dumb_data_folder string = "./data/dumb_data"
 
+type TrafficProfile struct {
+    Name         string
+    Proto        string 
+    SrcIP        []byte
+    DstIP        []byte
+    SrcPort      int
+    DstPort      int
+    PayloadMin   int
+    PayloadMax   int
+    
+    TCPFlags struct {
+        SYN bool
+        ACK bool
+        RST bool
+        FIN bool
+    }
+}
+
 func ensureDir(dirName string) {
 	if _, err := os.Stat(dirName); os.IsNotExist(err) {
 		slog.Info("target directory not found; creating it now", "directory", dirName)
@@ -27,10 +45,18 @@ func ensureDir(dirName string) {
 	}
 }
 
-// GenerateDummyPcap handles the heavy lifting for a single file
-func GenerateDummyPcap(filename string, packetCount int, wg *sync.WaitGroup) {
-	defer wg.Done()
+func GenerateDummyPcap(
+    filename string, 
+    packetCount int, 
+    packetTime time.Time, 
+    profiles []TrafficProfile, // Passed in from the outside like a Python list of dicts
+    wg *sync.WaitGroup,
+) {
+    defer wg.Done()
 
+    // -------------------------------------------------------------------------
+    // STEP 1: INITIALIZE FILE STREAMING & BUFFERING
+    // -------------------------------------------------------------------------
 	f, err := os.Create(filename)
 	if err != nil {
 		slog.Error("failed to create dummy pcap target file", "file_path", filename, "error", err.Error())
@@ -41,51 +67,169 @@ func GenerateDummyPcap(filename string, packetCount int, wg *sync.WaitGroup) {
 	// Use a large 1MB buffer to maximize SSD write speed
 	bufferedWriter := bufio.NewWriterSize(f, 1024*1024)
 	writer := pcapgo.NewWriter(bufferedWriter)
+    
+    // Write the mandatory PCAP global header at the top of the file
 	_ = writer.WriteFileHeader(65536, layers.LinkTypeEthernet)
 
+    // -------------------------------------------------------------------------
+    // STEP 2: PRE-ALLOCATE BLANK PACKET LAYERS (The "Reusable Envelopes")
+    // -------------------------------------------------------------------------
+    // We create these once OUTSIDE the loop. Inside the loop, we just wipe 
+    // and overwrite their keys so we don't stress the computer's memory.
+    ethLayer := &layers.Ethernet{
+        SrcMAC:       []byte{0x00, 0x0F, 0xAA, 0xBB, 0xCC, 0xDD},
+        DstMAC:       []byte{0x00, 0x0F, 0x11, 0x22, 0x33, 0x44},
+        EthernetType: layers.EthernetTypeIPv4,
+    }
+
+    ipLayer := &layers.IPv4{
+        Version: 4, 
+        TTL:     64,
+    }
+
+    tcpLayer := &layers.TCP{}
+    udpLayer := &layers.UDP{}
+
+    // The conveyor belt where gopacket flattens the layers into binary ones and zeros
 	buffer := gopacket.NewSerializeBuffer()
 	options := gopacket.SerializeOptions{FixLengths: true, ComputeChecksums: true}
 	
-	// Pre-set time to avoid calling time.Now() millions of times
-	timestamp := time.Now()
+    // -------------------------------------------------------------------------
+    // STEP 3: THE GENERATION LOOP
+    // -------------------------------------------------------------------------
+    for i := 0; i < packetCount; i++ {
+        buffer.Clear() // Clear the conveyor belt for the next packet
 
-	for i := 0; i < packetCount; i++ {
-		buffer.Clear() // Crucial: prevents memory growth
+        // 1. Pick a random profile blueprint (like choosing a random dict from a Python list)
+        profile := profiles[rand.Intn(len(profiles))]
 
-		// Randomize IPs so TimescaleDB builds real indexes
-		srcIP := []byte{192, 168, 1, byte(rand.Intn(254))}
-		dstIP := []byte{10, 0, 0, byte(rand.Intn(254))}
+        // 2. Populate the common IP layer fields using our blueprint data
+        ipLayer.SrcIP = profile.SrcIP
+        ipLayer.DstIP = profile.DstIP
 
-		eth := &layers.Ethernet{
-			SrcMAC:       []byte{0x00, 0x0F, 0xAA, 0xBB, 0xCC, 0xDD},
-			DstMAC:       []byte{0x00, 0x0F, 0x11, 0x22, 0x33, 0x44},
-			EthernetType: layers.EthernetTypeIPv4,
-		}
-		ip := &layers.IPv4{
-			Version: 4, TTL: 64, Protocol: layers.IPProtocolTCP,
-			SrcIP: srcIP, DstIP: dstIP,
-		}
+        // 3. Look at the protocol key ("TCP" or "UDP") and use the correct strategy switch
+        switch profile.Proto {
+        case "TCP":
+            ipLayer.Protocol = layers.IPProtocolTCP
 
-		_ = gopacket.SerializeLayers(buffer, options, eth, ip, gopacket.Payload([]byte("rugged-refined-data")))
-		
-		info := gopacket.CaptureInfo{
-			Timestamp:      timestamp,
-			CaptureLength:  len(buffer.Bytes()),
-			Length:         len(buffer.Bytes()),
-		}
-		
-		_ = writer.WritePacket(info, buffer.Bytes())
-		timestamp = timestamp.Add(time.Microsecond)
-	}
+            // Configure the TCP envelope keys
+            tcpLayer.SrcPort = layers.TCPPort(profile.SrcPort)
+            tcpLayer.DstPort = layers.TCPPort(profile.DstPort)
+            
+            // Map the TCP flags from our blueprint
+            tcpLayer.SYN = profile.TCPFlags.SYN
+            tcpLayer.ACK = profile.TCPFlags.ACK
+            tcpLayer.RST = profile.TCPFlags.RST
+            tcpLayer.FIN = profile.TCPFlags.FIN
 
+            // Real-world TCP control/error packets (like RST or FIN) don't have payloads
+            if profile.PayloadMin == 0 {
+                // Nest the dolls: Ethernet -> IP -> TCP (No payload)
+                _ = gopacket.SerializeLayers(buffer, options, ethLayer, ipLayer, tcpLayer)
+            } else {
+                // If a profile dictates a size, generate dynamic dummy payload bytes
+                payloadBytes := make([]byte, profile.PayloadMin+rand.Intn(profile.PayloadMax-profile.PayloadMin+1))
+                _ = gopacket.SerializeLayers(buffer, options, ethLayer, ipLayer, tcpLayer, gopacket.Payload(payloadBytes))
+            }
+
+        case "UDP":
+            ipLayer.Protocol = layers.IPProtocolUDP
+
+            // Calculate dynamic payload size based on the dict blueprint bounds
+            payloadSize := profile.PayloadMin
+            if profile.PayloadMax > profile.PayloadMin {
+                payloadSize = profile.PayloadMin + rand.Intn(profile.PayloadMax-profile.PayloadMin+1)
+            }
+            payloadBytes := make([]byte, payloadSize)
+
+            // Configure the UDP envelope keys
+            udpLayer.SrcPort = layers.UDPPort(profile.SrcPort)
+            udpLayer.DstPort = layers.UDPPort(profile.DstPort)
+            //udpLayer.Length = uint16(8 + payloadSize) // 8 bytes for the UDP header itself + the payload size
+
+            // Nest the dolls: Ethernet -> IP -> UDP -> Payload
+            _ = gopacket.SerializeLayers(buffer, options, ethLayer, ipLayer, udpLayer, gopacket.Payload(payloadBytes))
+        }
+
+        // ---------------------------------------------------------------------
+        // STEP 4: WRITE ENCODED PACKET TO RAM BUFFER
+        // ---------------------------------------------------------------------
+        info := gopacket.CaptureInfo{
+            Timestamp:      packetTime,
+            CaptureLength:  len(buffer.Bytes()), // Size of the flattened binary data
+            Length:         len(buffer.Bytes()),
+        }
+        
+        // Feed the formatted packet into our 1MB RAM buffer
+        _ = writer.WritePacket(info, buffer.Bytes())
+        
+        // Tick our private clock forward by 10ms for the next packet
+        packetTime = packetTime.Add(10 * time.Millisecond)
+    }
+
+    // -------------------------------------------------------------------------
+    // STEP 5: FLUSH FLUID TO DISK
+    // -------------------------------------------------------------------------
+    // Force whatever leftover data is chilling in the 1MB RAM buffer to write out to the SSD
 	_ = bufferedWriter.Flush()
 	_ = f.Sync()
 	
-	// Clean structural feedback when a worker finishes its disk writes
 	slog.Info("dummy pcap file generation complete", "file_name", filepath.Base(filename))
 }
 
 func PackageGenerator() {
+    packet_time := time.Date(2026, time.March, 7, 14, 30, 0, 0, time.UTC)
+    
+    // -------------------------------------------------------------------------
+    // STEP 1: DEFINE THE DICT-LIKE BLUEPRINTS (Once for the entire job)
+    // -------------------------------------------------------------------------
+    profiles := []TrafficProfile{
+        // Profile 1: The Heavy Bulk Data Stream (Light Blue in Wireshark)
+        {
+            Name:       "Bulk Data Stream",
+            Proto:      "UDP",
+            SrcIP:      []byte{74, 125, 3, 199},  
+            DstIP:      []byte{10, 5, 7, 113},    
+            SrcPort:    443,
+            DstPort:    61256,
+            PayloadMin: 1200,
+            PayloadMax: 1300, 
+        },
+    
+        // Profile 2: The TCP Connection Reset Error (Red in Wireshark)
+        {
+            Name:       "TCP Connection Reset",
+            Proto:      "TCP",
+            SrcIP:      []byte{10, 5, 7, 113},
+            DstIP:      []byte{54, 90, 39, 78},
+            SrcPort:    63040,
+            DstPort:    443,
+            PayloadMin: 0, 
+            PayloadMax: 0,
+            TCPFlags: struct {
+                SYN bool
+                ACK bool
+                RST bool
+                FIN bool
+            }{RST: true}, 
+        },
+    
+        // Profile 3: Local Multicast Discovery Noise (Dark Blue in Wireshark)
+        {
+            Name:       "MDNS Local Discovery",
+            Proto:      "UDP",
+            SrcIP:      []byte{10, 5, 7, 182},
+            DstIP:      []byte{224, 0, 0, 251}, 
+            SrcPort:    5353,                   
+            DstPort:    5353,
+            PayloadMin: 150,
+            PayloadMax: 250,
+        },
+    }
+
+    // -------------------------------------------------------------------------
+    // STEP 2: SETUP CONFIGURATION & ENV VARIABLES
+    // -------------------------------------------------------------------------
 	count, _ := strconv.Atoi(os.Getenv("GENERATOR_COUNT"))
 	size, _ := strconv.Atoi(os.Getenv("GENERATOR_SIZE_MB"))
 
@@ -104,20 +248,26 @@ func PackageGenerator() {
 	}
 
 	needed := count - len(matches)
-	packetsPerFile := size * 1250 // Roughly 1MB = 1250 packets with overhead
+    packetsPerFile := size * 1250
 
 	slog.Info("starting dummy file generation job", 
 		"files_remaining_to_generate", needed, 
 		"target_file_size_mb", size,
 	)
 	
+    // -------------------------------------------------------------------------
+    // STEP 3: SPAWN WORKERS & PASS THE BLUEPRINTS
+    // -------------------------------------------------------------------------
 	var wg sync.WaitGroup
 	for i := 1; i <= needed; i++ {
 		wg.Add(1)
 		fileName := filepath.Join(dumb_data_folder, fmt.Sprintf("test_batch_%d.pcap", len(matches)+i))
-		// Launch each file generation in its own goroutine
-		go GenerateDummyPcap(fileName, packetsPerFile, &wg)
-	}
+        
+        // Pass the hourly timestamp offset AND the profiles list down to each worker
+        calculatedTime := packet_time.Add(time.Hour * time.Duration(i))
+        
+        go GenerateDummyPcap(fileName, packetsPerFile, calculatedTime, profiles, &wg)
+    }
 
 	wg.Wait()
 	slog.Info("all dummy data generation files are ready for pipeline stress testing")

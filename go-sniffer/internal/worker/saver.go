@@ -10,7 +10,6 @@ import (
 )
 
 // Global atomic counter tracking packets successfully committed to the database.
-// This can be safely read concurrently by your upcoming Gin API routes.
 var TotalSavedPackets int64
 
 func PacketSaverWorker(ctx context.Context, id int, packetStream <-chan []string, results chan<- int, cancel context.CancelFunc) {
@@ -59,21 +58,41 @@ func PacketSaverWorker(ctx context.Context, id int, packetStream <-chan []string
 				})
 
 				if len(currentBatch) >= targetBatchSize {
+                    // 1. Start the stopwatch right before diving into the database
+                    writeStart := time.Now()
+
 					if err := db.BulkDatabaseWrite(ctx, currentBatch); err != nil {
 						log.Error("critical database batch write failure; triggering pipeline abort", "error", err.Error())
 						cancel() // Hit the emergency brake for all other goroutines
 						return
 					}
 					
+                    // 2. Calculate exactly how long the database storage engine took to respond
+                    writeDuration := time.Since(writeStart)
+                    
 					batchSize := len(currentBatch)
 					localSaved += batchSize
 					
-					// FIXED: Thread-safe atomic addition directly adding the batch size to global stats
 					atomic.AddInt64(&TotalSavedPackets, int64(batchSize))
+                    currentBatch = currentBatch[:0] // Clear slice buffer safely
 
-					currentBatch = currentBatch[:0] // Clear slice memory buffer without reallocating
-				}
-			}
-		}
-	}
+                    // 3. ADAPTIVE BRAKE: If the database write took longer than 25ms,
+                    // the host storage driver (Docker/macOS) is starting to bottleneck.
+                    // Sleep for the exact write duration to apply hardware-safe backpressure.
+                    if writeDuration > 25*time.Millisecond {
+                        log.Warn("hardware I/O bottleneck detected; applying backpressure throttle", 
+                            "db_write_time", writeDuration,
+                        )
+                        
+                        // We use a select block to ensure the sleep can be aborted if the app shuts down mid-nap
+                        select {
+                        case <-time.After(writeDuration):
+                        case <-ctx.Done():
+                            return
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

@@ -6,7 +6,8 @@ import (
 	"log/slog"
 	"sync/atomic"
 
-	"go-sniffer/internal/db"
+    "github.com/jackc/pgx/v5/pgxpool"
+	"go-sniffer/internal/storage"
 )
 
 // Global atomic counter tracking packets successfully committed to the database.
@@ -19,20 +20,27 @@ const (
 )
 
 
-func PacketSaverWorker(ctx context.Context, id int, packetStream <-chan []db.PacketRow, results chan<- int, cancel context.CancelFunc) {
+func PacketSaverWorker(
+    ctx context.Context, 
+    DB *pgxpool.Pool,
+    id int, 
+    packetStream <-chan []storage.PacketRow, 
+    results chan<- int, 
+    cancel context.CancelFunc,
+    ) {
 	var localSaved int
 	log := slog.With("saver_id", id)
 
     currentBackoff := 25 * time.Millisecond
 
-    var lastActiveBatch []db.PacketRow
+    var lastActiveBatch []storage.PacketRow
 	defer func() {
 		// Final emergency flush handling if channels close or context is cut
 		if len(lastActiveBatch) > 0 {
 			flushCtx, flushCancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer flushCancel()
 
-			if err := db.BulkDatabaseCopy(flushCtx, lastActiveBatch); err == nil {
+			if err := storage.BulkDatabaseCopy(flushCtx, DB, lastActiveBatch); err == nil {
 				batchSize := len(lastActiveBatch)
 				localSaved += batchSize
 				atomic.AddInt64(&TotalSavedPackets, int64(batchSize))
@@ -61,7 +69,7 @@ func PacketSaverWorker(ctx context.Context, id int, packetStream <-chan []db.Pac
 
             writeStart := time.Now()
 
-            if err := db.BulkDatabaseCopy(ctx, incomingBatch); err != nil {
+            if err := storage.BulkDatabaseCopy(ctx,DB, incomingBatch); err != nil {
                 log.Error("critical database batch write failure; triggering pipeline abort", "error", err.Error())
                 cancel()
                 return

@@ -2,11 +2,9 @@ services:
   sniffer:
     build: ./go-sniffer
     container_name: packet_sniffer_go
-    restart: "no" 
-    network_mode: "host"
-    cap_add:
-      - NET_ADMIN
-      - NET_RAW
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
     env_file:
       - .env
     volumes:
@@ -20,7 +18,9 @@ services:
     image: timescale/timescaledb:latest-pg16
     container_name: timescale_db
     restart: unless-stopped
-    network_mode: "host" # Critical because sniffer is on host mode
+    # 4. Removed network_mode: "host" -> Now isolated inside the Docker bridge network
+    ports:
+      - "5432:5432" # Maps Timescale to localhost:5432 for external tool access (Postico, DBeaver, etc.)
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
@@ -46,7 +46,7 @@ services:
     container_name: packet_ui_python
     restart: unless-stopped
     ports:
-      - "8501:8501"
+      - "8501:8501" # Maps your UI natively to your Mac's localhost:8501
     depends_on:
       db:
         condition: service_healthy

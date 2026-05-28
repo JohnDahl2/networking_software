@@ -1,4 +1,4 @@
-package db
+package storage
 
 import (
 	"context"
@@ -16,15 +16,12 @@ import (
 )
 
 
-var DB *pgxpool.Pool
-
-
-func InitDB(ctx context.Context, connString string) error {
+func InitDB(ctx context.Context, connString string)(*pgxpool.Pool, error){
 	var err error
 	config, err := pgxpool.ParseConfig(connString)
 	if err != nil {
 		slog.Error("Database config parsing failed", "Error", err)
-		return err
+		return nil, err
 	}
 
 	config.MaxConns = 10
@@ -32,23 +29,23 @@ func InitDB(ctx context.Context, connString string) error {
 	config.MaxConnIdleTime = 30 * time.Minute
 	config.MaxConnLifetime = 1 * time.Hour
 
-	DB, err = pgxpool.NewWithConfig(ctx, config)
+	DB, err := pgxpool.NewWithConfig(ctx, config)
 	if err != nil {
 		slog.Error("Failed to create database pool", "Error", err)
-		return err
+		return nil, err
 	}
 
 	if err = DB.Ping(ctx); err != nil {
 		slog.Error("Database ping failed, host may be down", "Error", err)
-		return err
+		return nil, err
 	}
 
 	if err = RunMigrations(connString); err != nil {
 		slog.Error("Schema migrations failed", "Error", err)
-		return err
+		return nil, err
 	}
 
-	return nil
+	return DB, nil
 }
 
 
@@ -82,7 +79,7 @@ type PacketRow struct {
     StreamID     pgtype.UUID `db:"stream_id"`
 }
 
-func BulkDatabaseCopy(ctx context.Context, rows []PacketRow) error {
+func BulkDatabaseCopy(ctx context.Context, DB *pgxpool.Pool, rows []PacketRow) error {
     if len(rows) == 0 {
         return nil
     }

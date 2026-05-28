@@ -1,5 +1,4 @@
 -- +goose Up
-SELECT 'up SQL query';
 CREATE TABLE packet_logs (
     time        TIMESTAMPTZ NOT NULL,
     src_ip      INET,
@@ -19,4 +18,4 @@ SELECT create_hypertable('packet_logs', 'time');
 CREATE INDEX idx_ip_search ON packet_logs (src_ip, dst_ip, time DESC);
 
 -- +goose Down
-SELECT 'down SQL query';
+DROP TABLE IF EXISTS packet_logs CASCADE;

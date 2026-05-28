@@ -2,9 +2,12 @@ package api
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"fmt"
+
+	"go-sniffer/internal/storage"
 	"time"
 )
 
@@ -46,16 +49,21 @@ func (s *Server) HandleListPackets(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 
 	for rows.Next() {
-		var p Packet
+		var row storage.PacketRow
 
-		err := rows.Scan(&p.Timestamp, &p.SrcIP, &p.DstIP, &p.Length)
+		err := rows.Scan(&row.Time, &row.SrcIP, &row.DstIP, &row.Length)
 		if err != nil {
+			slog.Error("Database row scan failed", "error", err)
 			w.WriteHeader(http.StatusBadGateway)
 			w.Write([]byte(`Error scanning database row`))
 			return
 		}
-		
-		dataQueried = append(dataQueried, p)
+		dataQueried = append(dataQueried, Packet{
+					Timestamp: row.Time,
+					SrcIP:     row.SrcIP.String(),
+					DstIP:     row.DstIP.String(),
+					Length:    int(row.Length),
+				})
 	}
 	jsonResponse, err := json.Marshal(dataQueried)
 	if err != nil {

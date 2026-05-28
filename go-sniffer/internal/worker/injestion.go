@@ -11,7 +11,7 @@ import (
 	"net/netip"
 	"sync"
 
-	"go-sniffer/internal/db"
+	"go-sniffer/internal/storage"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/google/gopacket"
@@ -21,7 +21,7 @@ import (
 
 var TotalPacketsRead int64
 
-func PcapWorker(ctx context.Context, id int, jobs <-chan string, packetStream chan<- []db.PacketRow, wg *sync.WaitGroup) {
+func PcapWorker(ctx context.Context, id int, jobs <-chan string, packetStream chan<- []storage.PacketRow, wg *sync.WaitGroup) {
 	defer wg.Done()
 	log := slog.With("reader_id", id)
 
@@ -50,7 +50,7 @@ func PcapWorker(ctx context.Context, id int, jobs <-chan string, packetStream ch
 				return err
 			}
 
-			currentBatch := make([]db.PacketRow, 0, batchLimit)
+			currentBatch := make([]storage.PacketRow, 0, batchLimit)
 
 			for {
 				if len(currentBatch) == 0 { 
@@ -118,7 +118,7 @@ func PcapWorker(ctx context.Context, id int, jobs <-chan string, packetStream ch
 					dstPort = int32(udp.DstPort)
 				}
 
-				row := db.PacketRow{
+				row := storage.PacketRow{
 					Time:     captureInfo.Timestamp, // Grab the actual time the packet hit the wire!
 					SrcIP:    srcIP,
 					DstIP:    dstIP,
@@ -141,7 +141,7 @@ func PcapWorker(ctx context.Context, id int, jobs <-chan string, packetStream ch
 						return ctx.Err()
 					}
                     atomic.AddInt64(&TotalPacketsRead, int64(len(currentBatch)))
-                    currentBatch = make([]db.PacketRow, 0, batchLimit)
+                    currentBatch = make([]storage.PacketRow, 0, batchLimit)
 				}
 			}
 			

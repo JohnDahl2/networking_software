@@ -1,30 +1,73 @@
 package db
 
 import (
-    "time"
-    "context"
-    "net/netip"
+	"context"
+	"log/slog"
+	"net/netip"
+	"time"
 
-    "github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgtype"
+    "github.com/pressly/goose/v3"
+    "github.com/jackc/pgx/v5/stdlib"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
-    "github.com/jackc/pgx/v5"
-    "github.com/jackc/pgx/v5/pgxpool"
 )
 
 
 var DB *pgxpool.Pool
 
+
 func InitDB(ctx context.Context, connString string) error {
-    var err error
-    // Connect to TimescaleDB using a connection pool
-    DB, err = pgxpool.New(ctx, connString)
-    if err != nil {
-        return err
-    }
-    
-    // Verify the connection works
-    return DB.Ping(ctx)
+	var err error
+	config, err := pgxpool.ParseConfig(connString)
+	if err != nil {
+		slog.Error("Database config parsing failed", "Error", err)
+		return err
+	}
+
+	config.MaxConns = 10
+	config.MinConns = 2
+	config.MaxConnIdleTime = 30 * time.Minute
+	config.MaxConnLifetime = 1 * time.Hour
+
+	DB, err = pgxpool.NewWithConfig(ctx, config)
+	if err != nil {
+		slog.Error("Failed to create database pool", "Error", err)
+		return err
+	}
+
+	if err = DB.Ping(ctx); err != nil {
+		slog.Error("Database ping failed, host may be down", "Error", err)
+		return err
+	}
+
+	if err = RunMigrations(connString); err != nil {
+		slog.Error("Schema migrations failed", "Error", err)
+		return err
+	}
+
+	return nil
+}
+
+
+
+func RunMigrations(connString string) error {
+	pgxConfig, err := pgx.ParseConfig(connString)
+	if err != nil {
+		return err
+	}
+
+	dbConn := stdlib.OpenDB(*pgxConfig)
+	defer dbConn.Close()
+
+	slog.Info("Running database schema migrations via Goose...")
+	
+	if err := goose.SetDialect("postgres"); err != nil {
+		return err
+	}
+	return goose.Up(dbConn, "./migrations")
 }
 
 type PacketRow struct {
@@ -44,7 +87,6 @@ func BulkDatabaseCopy(ctx context.Context, rows []PacketRow) error {
         return nil
     }
 
-    // Prepare the multi-row data matrix
     var inputRows [][]interface{}
     for _, row := range rows {
         inputRows = append(inputRows, []interface{}{
@@ -54,7 +96,6 @@ func BulkDatabaseCopy(ctx context.Context, rows []PacketRow) error {
         })
     }
 
-    // Stream the binary matrix straight into the database engine
     _, err := DB.CopyFrom(
         ctx,
         pgx.Identifier{"packet_logs"},
@@ -63,4 +104,3 @@ func BulkDatabaseCopy(ctx context.Context, rows []PacketRow) error {
     )
     return err
 }
-

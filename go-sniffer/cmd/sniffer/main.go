@@ -9,9 +9,11 @@ import (
     "log/slog"
     "sync/atomic"
     "strings"
-    "database/sql"
+    "net/http"
+
+
     _ "github.com/jackc/pgx/v5/stdlib" 
-    "github.com/pressly/goose/v3"
+    "go-sniffer/internal/api"
     "go-sniffer/internal/db"
 	"go-sniffer/internal/pcap"
     "go-sniffer/internal/worker"
@@ -84,19 +86,6 @@ func ProcessWithPool(workerReaderCount int, workerSaverCount int) {
     )
 }
 
-func RunMigrations(connString string) error {
-    // Goose needs a standard *sql.DB connection just to execute the migration SQL
-    db, err := sql.Open("pgx", connString)
-    if err != nil {
-        return err
-    }
-    defer db.Close()
-
-    // Tell goose where your SQL files live and run them
-    slog.Info("Running migrations")
-    return goose.Up(db, "./migrations")
-}
-
 func main() {
     var programLevel slog.Level // Need to set the logging level
     switch strings.ToUpper(os.Getenv("LOG_LEVEL")) {
@@ -119,19 +108,11 @@ func main() {
         connString = "postgres://postgres:postgres@localhost:5432/sniffer?sslmode=disable"
     }
 
-    // CREATE A CONTEXT FOR STARTUP
     ctx := context.Background()
 
-    // 1. Swap db.ConnectDB() out for your new thread-safe connection pool!
     slog.Info("Connecting to TimescaleDB Pool...")
     if err := db.InitDB(ctx, connString); err != nil {
         slog.Error("Failed to initialize database pool, terminating", "error", err)
-        os.Exit(1)
-    }
-
-    // 2. Run Goose migrations using the same connection string
-    if err := RunMigrations(connString); err != nil {
-        slog.Error("Failed running schema migrations, terminating application", "error", err)
         os.Exit(1)
     }
 
@@ -139,6 +120,17 @@ func main() {
 	if demoMode == "true" {
 		pcap.PackageGenerator()
 	}
-	
-	ProcessWithPool(2, 2)
+    myServer := &api.Server{
+        DB: db.DB, 
+    }
+
+    slog.Info("Starting local API server", "port", 3000)
+
+    // 2. Let ListenAndServe block main() naturally. No go func, no select{} needed!
+    if err := http.ListenAndServe(":3000", myServer.Router()); err != nil {
+        slog.Error("API server failed to start or crashed", "error", err)
+        os.Exit(1)
+    }
+	//ProcessWithPool(2, 2)
+    select {}
 }

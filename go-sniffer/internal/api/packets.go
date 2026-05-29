@@ -52,6 +52,15 @@ type PaginationResponse struct{
 	NextCursor   *string 	  `json:"next_cursor,omitempty"`
 }
 
+func resolveOrder(orderstring string) (string, error) {
+	if orderstring == "desc" {
+		return "DESC", nil
+	} else if orderstring == "" || orderstring == "asc" {
+		return "ASC", nil
+	}
+	return "", fmt.Errorf("Unknow field for order: %q", orderstring)
+}
+
 func resolveColumns(columString string) ([]string,error) {
 	if columString == "" {
 		return defaultColumns, nil
@@ -71,6 +80,7 @@ func (s *Server) HandleListPackets(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	var cursor *time.Time
 	var query string
+	var order string
 	var rows pgx.Rows 
 	var nextCursor *string
 	limitStr := q.Get("limit")
@@ -103,18 +113,27 @@ func (s *Server) HandleListPackets(w http.ResponseWriter, r *http.Request) {
 		parsedTime, err := time.Parse(time.RFC3339, cursorStr)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte(fmt.Sprintf(`There was an issue with the curse paganation: %v`, err)))
+			w.Write([]byte(fmt.Sprintf(`There was an issue with the paganation: %v`, err)))
 			return
 		}
 		cursor = &parsedTime
 	}
 
+	oderStr := q.Get("order")
+	order, err = resolveOrder(oderStr)
+	
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(fmt.Sprintf(`There was an issue with the order: %v`, err)))
+		return
+	}
+
 	columnString := strings.Join(columns, ", ")
 	if cursor == nil {
-		query = fmt.Sprintf("SELECT %s FROM packet_logs ORDER BY time ASC LIMIT $1", columnString)
+		query = fmt.Sprintf("SELECT %s FROM packet_logs ORDER BY time %s LIMIT $1", columnString, order)
 		rows, err = s.DB.Query(r.Context(), query, limit)
 	}else {
-		query = fmt.Sprintf("SELECT %s FROM packet_logs WHERE time > $1 ORDER BY time ASC LIMIT $2", columnString)
+		query = fmt.Sprintf("SELECT %s FROM packet_logs WHERE time > $1 ORDER BY time %s LIMIT $2", columnString, order)
 		rows, err = s.DB.Query(r.Context(), query, cursor, limit)
 	}
 	if err != nil {

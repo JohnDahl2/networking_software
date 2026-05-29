@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"go-sniffer/internal/storage"
 	"time"
 )
@@ -46,6 +47,11 @@ type Packet struct {
 	StreamID  *string    `json:"stream_id,omitempty"`
 }
 
+type PaginationResponse struct{
+	Data 	      []Packet      `json:"data"`
+	NextCursor   *string 	  `json:"next_cursor,omitempty"`
+}
+
 func resolveColumns(columString string) ([]string,error) {
 	if columString == "" {
 		return defaultColumns, nil
@@ -63,6 +69,10 @@ func resolveColumns(columString string) ([]string,error) {
 
 func (s *Server) HandleListPackets(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
+	var cursor *time.Time
+	var query string
+	var rows pgx.Rows 
+	var nextCursor *string
 	limitStr := q.Get("limit")
 	if limitStr == "" {
 		limitStr = "100"
@@ -88,9 +98,25 @@ func (s *Server) HandleListPackets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	cursorStr := q.Get("cursor") 
+	if cursorStr != "" {
+		parsedTime, err := time.Parse(time.RFC3339, cursorStr)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(fmt.Sprintf(`There was an issue with the curse paganation: %v`, err)))
+			return
+		}
+		cursor = &parsedTime
+	}
+
 	columnString := strings.Join(columns, ", ")
-	query := fmt.Sprintf("SELECT %s FROM packet_logs LIMIT $1", columnString)
-	rows, err := s.DB.Query(r.Context(), query, limit)
+	if cursor == nil {
+		query = fmt.Sprintf("SELECT %s FROM packet_logs ORDER BY time ASC LIMIT $1", columnString)
+		rows, err = s.DB.Query(r.Context(), query, limit)
+	}else {
+		query = fmt.Sprintf("SELECT %s FROM packet_logs WHERE time > $1 ORDER BY time ASC LIMIT $2", columnString)
+		rows, err = s.DB.Query(r.Context(), query, cursor, limit)
+	}
 	if err != nil {
 		w.WriteHeader(http.StatusBadGateway)
         w.Write([]byte(fmt.Sprintf("DB Error: %v", err)))
@@ -165,9 +191,16 @@ func (s *Server) HandleListPackets(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		dataQueried = append(dataQueried, p)
-	}
+		}
+	if len(dataQueried) == limit {
+			t := dataQueried[len(dataQueried)-1].Timestamp.Format(time.RFC3339)
+    		nextCursor = &t
+		} else {
+			nextCursor = nil
+		}
 
-	jsonResponse, err := json.Marshal(dataQueried)
+	pagainatedData := PaginationResponse{Data: dataQueried, NextCursor: nextCursor}
+	jsonResponse, err := json.Marshal(pagainatedData)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return

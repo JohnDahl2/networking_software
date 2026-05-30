@@ -14,10 +14,6 @@ type Server struct{
 	DB *pgxpool.Pool	
 }
 
-func NewServer() *Server{
-	return &Server{}
-}
-
 func (s *Server) Router() http.Handler {
 	r := chi.NewRouter()
     r.Use(middleware.Logger)

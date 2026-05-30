@@ -1,55 +1,72 @@
 package api
 
 import (
-	"strings"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
-	"fmt"
+	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"go-sniffer/internal/storage"
-	"time"
 )
 
 var defaultColumns = []string{
-	"time", 
-	"src_ip", 
-	"dst_ip", 
-	"src_port", 
-	"dst_port", 
-	"protocol", 
-	"length", 
+	"time",
+	"src_ip",
+	"dst_ip",
+	"src_port",
+	"dst_port",
+	"protocol",
+	"length",
 	"tcp_flags",
 }
+
 var validFields = map[string]bool{
-	"time":       true,
-	"src_ip":     true,
-	"dst_ip":     true,
-	"src_port":   true,
-	"dst_port":   true,
-	"protocol":   true,
-	"length":     true,
-	"tcp_flags":  true,
-	"stream_id":  true, 
+	"time":      true,
+	"src_ip":    true,
+	"dst_ip":    true,
+	"src_port":  true,
+	"dst_port":  true,
+	"protocol":  true,
+	"length":    true,
+	"tcp_flags": true,
+	"stream_id": true,
+}
+
+var validExpressions = map[string]string{
+	"eq":  "=",
+	"ne":  "!=",
+	"gt":  ">",
+	"lt":  "<",
+	"gte": ">=",
+	"lte": "<=",
 }
 
 type Packet struct {
 	Timestamp time.Time `json:"time"`
-	SrcIP     *string    `json:"src_ip,omitempty"`
-	DstIP     *string    `json:"dst_ip,omitempty"`
-	SrcPort   *int       `json:"src_port,omitempty"`
-	DstPort   *int       `json:"dst_port,omitempty"`
-	Protocol  *string    `json:"protocol,omitempty"`
-	Length    *int       `json:"length,omitempty"`
-	TcpFlags  *int       `json:"tcp_flags,omitempty"`
-	StreamID  *string    `json:"stream_id,omitempty"`
+	SrcIP     *string   `json:"src_ip,omitempty"`
+	DstIP     *string   `json:"dst_ip,omitempty"`
+	SrcPort   *int      `json:"src_port,omitempty"`
+	DstPort   *int      `json:"dst_port,omitempty"`
+	Protocol  *string   `json:"protocol,omitempty"`
+	Length    *int      `json:"length,omitempty"`
+	TcpFlags  *int      `json:"tcp_flags,omitempty"`
+	StreamID  *string   `json:"stream_id,omitempty"`
 }
 
-type PaginationResponse struct{
-	Data 	      []Packet      `json:"data"`
-	NextCursor   *string 	  `json:"next_cursor,omitempty"`
+type PaginationResponse struct {
+	Data       []Packet `json:"data"`
+	NextCursor *string  `json:"next_cursor,omitempty"`
+}
+
+// Filter holds a parsed and validated filter expression.
+type Filter struct {
+	Field    string
+	Operator string // SQL operator e.g. "=", ">", "<="
+	Value    string
 }
 
 func resolveOrder(orderstring string) (string, error) {
@@ -58,16 +75,15 @@ func resolveOrder(orderstring string) (string, error) {
 	} else if orderstring == "" || orderstring == "asc" {
 		return "ASC", nil
 	}
-	return "", fmt.Errorf("Unknow field for order: %q", orderstring)
+	return "", fmt.Errorf("unknown order value: %q, use asc or desc", orderstring)
 }
 
-func resolveColumns(columString string) ([]string,error) {
-	if columString == "" {
+func resolveColumns(columSlice []string) ([]string, error) {
+	if len(columSlice) == 0 {
 		return defaultColumns, nil
 	}
-	stringSlice := strings.Split(columString, ",")
 	validatedFields := []string{}
-	for _,f :=range(stringSlice) {
+	for _, f := range columSlice {
 		if !validFields[f] {
 			return nil, fmt.Errorf("unknown field: %q", f)
 		}
@@ -76,13 +92,36 @@ func resolveColumns(columString string) ([]string,error) {
 	return validatedFields, nil
 }
 
+// resolveFilters parses each "field:op:value" string and validates the field and operator.
+func resolveFilters(filterSlice []string) ([]Filter, error) {
+	filters := make([]Filter, 0, len(filterSlice))
+	for _, f := range filterSlice {
+		parts := strings.SplitN(f, ":", 3)
+		if len(parts) != 3 {
+			return nil, fmt.Errorf("invalid filter format %q, expected field:op:value", f)
+		}
+		field, op, value := parts[0], parts[1], parts[2]
+
+		if !validFields[field] {
+			return nil, fmt.Errorf("unknown filter field: %q", field)
+		}
+		sqlOp, ok := validExpressions[op]
+		if !ok {
+			return nil, fmt.Errorf("unknown filter operator: %q", op)
+		}
+		filters = append(filters, Filter{Field: field, Operator: sqlOp, Value: value})
+	}
+	return filters, nil
+}
+
 func (s *Server) HandleListPackets(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	var cursor *time.Time
 	var query string
 	var order string
-	var rows pgx.Rows 
+	var rows pgx.Rows
 	var nextCursor *string
+
 	limitStr := q.Get("limit")
 	if limitStr == "" {
 		limitStr = "100"
@@ -93,57 +132,103 @@ func (s *Server) HandleListPackets(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`Limit was not a number bad boy!`))
 		return
 	}
-
-	if limit > 100{
+	if limit > 100 {
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte(`Upper limit is 100 for the time being`))
 		return
 	}
 
-	columnFields := q.Get("fields")
-	columns, err := resolveColumns(columnFields)
+	// Parse and validate fields
+	var columnSlice []string
+	if raw := q.Get("fields"); raw != "" {
+		columnSlice = strings.Split(raw, ",")
+	}
+	columns, err := resolveColumns(columnSlice)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(fmt.Sprintf(`There was an issue with your field err: %v`, err)))
+		w.Write([]byte(fmt.Sprintf("There was an issue with your field err: %v", err)))
 		return
 	}
 
-	cursorStr := q.Get("cursor") 
+	// Parse and validate cursor
+	cursorStr := q.Get("cursor")
 	if cursorStr != "" {
 		parsedTime, err := time.Parse(time.RFC3339, cursorStr)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte(fmt.Sprintf(`There was an issue with the paganation: %v`, err)))
+			w.Write([]byte(fmt.Sprintf("There was an issue with the pagination: %v", err)))
 			return
 		}
 		cursor = &parsedTime
 	}
 
-	oderStr := q.Get("order")
-	order, err = resolveOrder(oderStr)
-	
+	// Parse and validate order
+	order, err = resolveOrder(q.Get("order"))
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(fmt.Sprintf(`There was an issue with the order: %v`, err)))
+		w.Write([]byte(fmt.Sprintf("There was an issue with the order: %v", err)))
 		return
 	}
+
+	// Parse and validate filters
+	filters, err := resolveFilters(q["filter"])
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(fmt.Sprintf("There was an issue with a filter: %v", err)))
+		return
+	}
+
+	// Build the query dynamically.
+	// args holds the parameterized values in order, argIdx tracks the $N position.
+	args := []any{}
+	argIdx := 1
+	whereClauses := []string{}
+
+	// If cursor is present it becomes the first WHERE clause and first arg.
+	if cursor != nil {
+		whereClauses = append(whereClauses, fmt.Sprintf("time > $%d", argIdx))
+		args = append(args, cursor)
+		argIdx++
+	}
+
+	// Each filter adds a WHERE clause and a new arg.
+	for _, f := range filters {
+		whereClauses = append(whereClauses, fmt.Sprintf("%s %s $%d", f.Field, f.Operator, argIdx))
+		args = append(args, f.Value)
+		argIdx++
+	}
+
+	// LIMIT is always the last arg.
+	args = append(args, limit)
 
 	columnString := strings.Join(columns, ", ")
-	if cursor == nil {
-		query = fmt.Sprintf("SELECT %s FROM packet_logs ORDER BY time %s LIMIT $1", columnString, order)
-		rows, err = s.DB.Query(r.Context(), query, limit)
-	}else {
-		query = fmt.Sprintf("SELECT %s FROM packet_logs WHERE time > $1 ORDER BY time %s LIMIT $2", columnString, order)
-		rows, err = s.DB.Query(r.Context(), query, cursor, limit)
+	if len(whereClauses) > 0 {
+		query = fmt.Sprintf(
+			"SELECT %s FROM packet_logs WHERE %s ORDER BY time %s LIMIT $%d",
+			columnString,
+			strings.Join(whereClauses, " AND "),
+			order,
+			argIdx,
+		)
+	} else {
+		query = fmt.Sprintf(
+			"SELECT %s FROM packet_logs ORDER BY time %s LIMIT $%d",
+			columnString,
+			order,
+			argIdx,
+		)
 	}
+
+	rows, err = s.DB.Query(r.Context(), query, args...)
 	if err != nil {
 		w.WriteHeader(http.StatusBadGateway)
-        w.Write([]byte(fmt.Sprintf("DB Error: %v", err)))
+		w.Write([]byte(fmt.Sprintf("DB Error: %v", err)))
 		return
 	}
+	defer rows.Close()
+
 	dataQueried := make([]Packet, 0, limit)
 
-	defer rows.Close()
 	for rows.Next() {
 		var row storage.PacketRow
 		scanTargets := make([]any, len(columns))
@@ -210,16 +295,17 @@ func (s *Server) HandleListPackets(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		dataQueried = append(dataQueried, p)
-		}
-	if len(dataQueried) == limit {
-			t := dataQueried[len(dataQueried)-1].Timestamp.Format(time.RFC3339)
-    		nextCursor = &t
-		} else {
-			nextCursor = nil
-		}
+	}
 
-	pagainatedData := PaginationResponse{Data: dataQueried, NextCursor: nextCursor}
-	jsonResponse, err := json.Marshal(pagainatedData)
+	if len(dataQueried) == limit {
+		t := dataQueried[len(dataQueried)-1].Timestamp.Format(time.RFC3339)
+		nextCursor = &t
+	} else {
+		nextCursor = nil
+	}
+
+	paginatedData := PaginationResponse{Data: dataQueried, NextCursor: nextCursor}
+	jsonResponse, err := json.Marshal(paginatedData)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return

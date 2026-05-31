@@ -1,0 +1,163 @@
+{
+  "info": {
+    "name": "go-sniffer API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Packets",
+      "item": [
+        {
+          "name": "List Packets (default)",
+          "request": {
+            "method": "GET",
+            "url": "http://localhost:3000/api/v1/packets"
+          }
+        },
+        {
+          "name": "List Packets - limit",
+          "request": {
+            "method": "GET",
+            "url": "http://localhost:3000/api/v1/packets?limit=10"
+          }
+        },
+        {
+          "name": "List Packets - field selection",
+          "request": {
+            "method": "GET",
+            "url": "http://localhost:3000/api/v1/packets?fields=src_ip,dst_ip,protocol,length"
+          }
+        },
+        {
+          "name": "List Packets - with stream_id",
+          "request": {
+            "method": "GET",
+            "url": "http://localhost:3000/api/v1/packets?fields=src_ip,dst_ip,stream_id"
+          }
+        },
+        {
+          "name": "List Packets - order desc",
+          "request": {
+            "method": "GET",
+            "url": "http://localhost:3000/api/v1/packets?order=desc&limit=10"
+          }
+        },
+        {
+          "name": "List Packets - filter by protocol",
+          "request": {
+            "method": "GET",
+            "url": "http://localhost:3000/api/v1/packets?filter=protocol:eq:TCP"
+          }
+        },
+        {
+          "name": "List Packets - filter by length",
+          "request": {
+            "method": "GET",
+            "url": "http://localhost:3000/api/v1/packets?filter=length:gt:500"
+          }
+        },
+        {
+          "name": "List Packets - multiple filters",
+          "request": {
+            "method": "GET",
+            "url": "http://localhost:3000/api/v1/packets?filter=protocol:eq:UDP&filter=length:gt:1000&order=desc&limit=10"
+          }
+        },
+        {
+          "name": "List Packets - with cursor",
+          "request": {
+            "method": "GET",
+            "url": "http://localhost:3000/api/v1/packets?cursor=2026-03-07T14:31:40Z&limit=10"
+          }
+        },
+        {
+          "name": "List Packets - bad field (expect 400)",
+          "request": {
+            "method": "GET",
+            "url": "http://localhost:3000/api/v1/packets?fields=fake_field"
+          }
+        },
+        {
+          "name": "List Packets - bad order (expect 400)",
+          "request": {
+            "method": "GET",
+            "url": "http://localhost:3000/api/v1/packets?order=sideways"
+          }
+        },
+        {
+          "name": "List Packets - limit too high (expect 400)",
+          "request": {
+            "method": "GET",
+            "url": "http://localhost:3000/api/v1/packets?limit=999"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Jobs",
+      "item": [
+        {
+          "name": "List Jobs",
+          "request": {
+            "method": "GET",
+            "url": "http://localhost:3000/api/v1/jobs"
+          }
+        },
+        {
+          "name": "Get Job by ID",
+          "request": {
+            "method": "GET",
+            "url": "http://localhost:3000/api/v1/jobs/{{job_id}}"
+          }
+        },
+        {
+          "name": "Create Job (trigger extraction)",
+          "request": {
+            "method": "POST",
+            "url": "http://localhost:3000/api/v1/jobs",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        {
+          "name": "Create Job - custom source dir",
+          "request": {
+            "method": "POST",
+            "url": "http://localhost:3000/api/v1/jobs?source_dir=data/dumb_data",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        {
+          "name": "Delete Job by ID",
+          "request": {
+            "method": "DELETE",
+            "url": "http://localhost:3000/api/v1/jobs/{{job_id}}"
+          }
+        },
+        {
+          "name": "Get Job by ID - invalid ID (expect 400)",
+          "request": {
+            "method": "GET",
+            "url": "http://localhost:3000/api/v1/jobs/not-a-uuid"
+          }
+        },
+        {
+          "name": "Delete Job - invalid ID (expect 400)",
+          "request": {
+            "method": "DELETE",
+            "url": "http://localhost:3000/api/v1/jobs/not-a-uuid"
+          }
+        }
+      ]
+    }
+  ]
+}

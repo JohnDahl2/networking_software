@@ -1,14 +1,13 @@
 package worker
 
 import (
-	"os"
-	"time"
 	"context"
-	"path/filepath"
+	"log/slog"
 	"sync"
 	"sync/atomic"
-	"log/slog"
+	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"go-sniffer/internal/storage"
@@ -20,29 +19,17 @@ import (
 func ProcessWithPool(
 	ctx context.Context,
 	DB *pgxpool.Pool,
-	workerReaderCount int, 
+	jobId pgtype.UUID,
+	filePaths []string,
+	workerReaderCount int,
 	workerSaverCount int,
-	) {
+) {
 	start := time.Now()
 
-    ctx, cancel := context.WithCancel(ctx)
-    defer cancel()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
-	pcapDir := os.Getenv("PCAP_SOURCE_DIR")
-    if pcapDir == "" {
-        pcapDir = "data/dumb_data"
-    }
-
-    absPath, _ := filepath.Abs(pcapDir)
-    slog.Debug("Looking for pcaps in", "File:", absPath)
-
-    filePaths, _ := filepath.Glob(filepath.Join(pcapDir, "*.pcap"))
-
-    jobId, err := storage.CreateJob(ctx, DB, pcapDir, len(filePaths))
-    if err != nil {
-        slog.Error("There was an issue creating the jobs report", "error:", err)
-        return
-    }
+	slog.Debug("Starting pipeline", "total_files", len(filePaths))
 
     jobs := make(chan string, len(filePaths)) 
     packetStream := make(chan []storage.PacketRow, 100) 

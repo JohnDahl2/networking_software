@@ -14,7 +14,6 @@ import (
     "go-sniffer/internal/api"
     "go-sniffer/internal/storage"
 	"go-sniffer/internal/pcap"
-    "go-sniffer/internal/worker"
 )
 
 type WorkerPool struct {
@@ -58,7 +57,9 @@ func main() {
 		pcap.PackageGenerator()
 	}
     myServer := &api.Server{
-        DB: DB, 
+        DB: DB,
+        Ctx: ctx,
+        Jobs: make(map[string]context.CancelFunc),
     }
 
     slog.Info("Starting local API server", "port", 3000)
@@ -69,6 +70,5 @@ func main() {
             os.Exit(1)
         }
     } ()
-	worker.ProcessWithPool(ctx,DB, 2, 2)
     select {}
 }

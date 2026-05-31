@@ -1,6 +1,8 @@
 package api
 
 import (
+	"sync"
+	"context"
 	"net/http"
 	"time"
 
@@ -11,6 +13,9 @@ import (
 
 type Server struct {
 	DB *pgxpool.Pool
+	Ctx context.Context
+	Jobs    map[string]context.CancelFunc
+	JobsMu  sync.Mutex
 }
 
 func (s *Server) Router() http.Handler {
@@ -27,6 +32,7 @@ func (s *Server) Router() http.Handler {
 			r.Get("/", s.HandleListJobs)
 			r.Post("/", s.HandleCreateJob)
 			r.Get("/{job_id}", s.HandleGetJob)
+			r.Delete("/{job_id}", s.DeleteJob)
 		})
 	})
 	return r

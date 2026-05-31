@@ -124,14 +124,24 @@ func (s *Server) HandleCreateJob(w http.ResponseWriter, r *http.Request) {
 	filePaths, _ := filepath.Glob(filepath.Join(pcapDir, "*.pcap"))
 
 	// Create the job synchronously so we have an ID to return immediately.
-	jobID, err := storage.CreateJob(context.Background(), s.DB, pcapDir, len(filePaths))
+	jobID, err := storage.CreateJob(s.Ctx, s.DB, pcapDir, len(filePaths))
 	if err != nil {
 		http.Error(w, fmt.Sprintf("failed to create job: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	// Start the pipeline in the background with the pre-created job ID.
-	go worker.ProcessWithPool(context.Background(), s.DB, jobID, filePaths, 2, 2)
+	jobCtx, cancel := context.WithCancel(s.Ctx)
+
+	s.JobsMu.Lock()
+	s.Jobs[jobID.String()] = cancel
+	s.JobsMu.Unlock()
+
+	go func() {
+		worker.ProcessWithPool(jobCtx, s.DB, jobID, filePaths, 2, 2)
+		s.JobsMu.Lock()
+		delete(s.Jobs, jobID.String())
+		s.JobsMu.Unlock()
+	}()
 
 	// Return the job immediately as 202 Accepted.
 	row := storage.JobRow{
@@ -146,4 +156,29 @@ func (s *Server) HandleCreateJob(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	json.NewEncoder(w).Encode(jobRowToResponse(row))
+}
+
+// HandleCDeleteJob to delete job.
+func (s *Server) DeleteJob(w http.ResponseWriter, r *http.Request) {
+	jobIDStr := chi.URLParam(r, "job_id")
+
+	// If the job is still running, cancel it.
+	s.JobsMu.Lock()
+	if cancel, ok := s.Jobs[jobIDStr]; ok {
+		cancel()
+		delete(s.Jobs, jobIDStr)
+	}
+	s.JobsMu.Unlock()
+
+	_, err := s.DB.Exec(r.Context(), `DELETE FROM packet_logs WHERE stream_id = $1`, jobIDStr)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("DB error: %v", err), http.StatusBadGateway)
+		return
+	}
+	_, err = s.DB.Exec(r.Context(), `DELETE FROM job_tracking WHERE job_id = $1`, jobIDStr)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("DB error: %v", err), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

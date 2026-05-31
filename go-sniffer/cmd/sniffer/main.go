@@ -57,7 +57,9 @@ func main() {
 		pcap.PackageGenerator()
 	}
     myServer := &api.Server{
-        DB: DB, 
+        DB: DB,
+        Ctx: ctx,
+        Jobs: make(map[string]context.CancelFunc),
     }
 
     slog.Info("Starting local API server", "port", 3000)

@@ -131,7 +131,7 @@ func (s *Server) HandleCreateJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Start the pipeline in the background with the pre-created job ID.
-	go worker.ProcessWithPool(context.Background(), s.DB, jobID, 2, 2)
+	go worker.ProcessWithPool(context.Background(), s.DB, jobID, filePaths, 2, 2)
 
 	// Return the job immediately as 202 Accepted.
 	row := storage.JobRow{

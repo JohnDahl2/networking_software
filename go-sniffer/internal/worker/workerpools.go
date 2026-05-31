@@ -1,13 +1,11 @@
 package worker
 
 import (
-	"os"
-	"time"
 	"context"
-	"path/filepath"
+	"log/slog"
 	"sync"
 	"sync/atomic"
-	"log/slog"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -22,6 +20,7 @@ func ProcessWithPool(
 	ctx context.Context,
 	DB *pgxpool.Pool,
 	jobId pgtype.UUID,
+	filePaths []string,
 	workerReaderCount int,
 	workerSaverCount int,
 ) {
@@ -30,15 +29,7 @@ func ProcessWithPool(
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	pcapDir := os.Getenv("PCAP_SOURCE_DIR")
-	if pcapDir == "" {
-		pcapDir = "data/dumb_data"
-	}
-
-	absPath, _ := filepath.Abs(pcapDir)
-	slog.Debug("Looking for pcaps in", "File:", absPath)
-
-	filePaths, _ := filepath.Glob(filepath.Join(pcapDir, "*.pcap"))
+	slog.Debug("Starting pipeline", "total_files", len(filePaths))
 
     jobs := make(chan string, len(filePaths)) 
     packetStream := make(chan []storage.PacketRow, 100) 

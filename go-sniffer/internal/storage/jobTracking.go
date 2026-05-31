@@ -9,22 +9,11 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// JobRow represents a job tracking record in the database.
-type JobRow struct {
-	JobID        pgtype.UUID  `db:"job_id"`
-	Status       string       `db:"status"`
-	StartedAt    time.Time    `db:"started_at"`
-	CompletedAt  *time.Time   `db:"completed_at"`
-	SourceDir    string       `db:"source_dir"`
-	TotalFiles   int          `db:"total_files"`
-	FilesDone    int          `db:"files_done"`
-}
-
 // CreateJob inserts a new PENDING job into job_tracking and returns the generated job_id.
 func CreateJob(ctx context.Context, DB *pgxpool.Pool, sourceDir string, totalFiles int) (pgtype.UUID, error) {
 	query := `
 		INSERT INTO job_tracking (
-			status, started_at, source_dir, total_files, files_done
+			status, started_at, source_dir, total_files, files_read
 		) VALUES (
 			$1, $2, $3, $4, $5
 		) RETURNING job_id
@@ -32,7 +21,7 @@ func CreateJob(ctx context.Context, DB *pgxpool.Pool, sourceDir string, totalFil
 
 	var jobID pgtype.UUID
 	err := DB.QueryRow(ctx, query,
-		"PENDING",
+		"PROCESSING",
 		time.Now(),
 		sourceDir,
 		totalFiles,
@@ -46,14 +35,14 @@ func CreateJob(ctx context.Context, DB *pgxpool.Pool, sourceDir string, totalFil
 }
 
 
-// UpdateJobProgress increments files_done and recalculates progress_pct.
-func UpdateJobProgress(ctx context.Context, DB *pgxpool.Pool, jobID pgtype.UUID, filesDone int) error {
+// UpdateJobProgress increments files_read and recalculates progress_pct.
+func UpdateJobProgress(ctx context.Context, DB *pgxpool.Pool, jobID pgtype.UUID, filesRead int) error {
 	query := `
 		UPDATE job_tracking
-		SET files_done    = files_done + $1
+		SET files_read = files_read + $1
 		WHERE job_id = $2
 	`
-	_, err := DB.Exec(ctx, query, filesDone,jobID)
+	_, err := DB.Exec(ctx, query, filesRead,jobID)
 	if err != nil {
 		slog.Error("failed to update job progress", "error", err)
 		return err

@@ -6,7 +6,7 @@ CREATE TABLE job_tracking (
     completed_at    TIMESTAMPTZ,
     source_dir      TEXT,
     total_files     INTEGER,
-    files_done      INTEGER
+    files_read      INTEGER
 );
 
 -- +goose Down

@@ -14,6 +14,7 @@ import (
 	"go-sniffer/internal/storage"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcapgo"
@@ -21,7 +22,7 @@ import (
 
 var TotalPacketsRead int64
 
-func PcapWorker(ctx context.Context, id int, jobs <-chan string, packetStream chan<- []storage.PacketRow, wg *sync.WaitGroup) {
+func PcapWorker(ctx context.Context,DB *pgxpool.Pool, jobId pgtype.UUID, id int, jobs <-chan string, packetStream chan<- []storage.PacketRow, wg *sync.WaitGroup) {
 	defer wg.Done()
 	log := slog.With("reader_id", id)
 
@@ -127,10 +128,7 @@ func PcapWorker(ctx context.Context, id int, jobs <-chan string, packetStream ch
 					Protocol: protocol,
 					Length:   int32(captureInfo.Length),
 					TCPFlags: tcpFlags,
-					StreamID: pgtype.UUID{
-						Bytes: [16]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-						Valid: true,
-					},
+					StreamID: jobId,
 				}
 
 				currentBatch = append(currentBatch, row)
@@ -156,6 +154,10 @@ func PcapWorker(ctx context.Context, id int, jobs <-chan string, packetStream ch
 
 			return nil
 		}(path)
+
+		if err == nil {
+			storage.UpdateJobProgress(ctx, DB, jobId, 1)
+		}
 
 		// 4. Clean, isolated error tracking
 		if err != nil {

@@ -9,12 +9,18 @@ import (
 
 
     _ "github.com/jackc/pgx/v5/stdlib" 
+    "github.com/jackc/pgx/v5/pgxpool"
+
     "go-sniffer/internal/api"
     "go-sniffer/internal/storage"
 	"go-sniffer/internal/pcap"
-    //"go-sniffer/internal/worker"
+    "go-sniffer/internal/worker"
 )
 
+type WorkerPool struct {
+    DB    *pgxpool.Pool
+    Ctx   context.Context
+}
 
 func main() {
     var programLevel slog.Level // Need to set the logging level
@@ -63,6 +69,6 @@ func main() {
             os.Exit(1)
         }
     } ()
-	//worker.ProcessWithPool(ctx,DB, 2, 2)
+	worker.ProcessWithPool(ctx,DB, 2, 2)
     select {}
 }

@@ -14,7 +14,6 @@ import (
     "go-sniffer/internal/api"
     "go-sniffer/internal/storage"
 	"go-sniffer/internal/pcap"
-    "go-sniffer/internal/worker"
 )
 
 type WorkerPool struct {
@@ -69,6 +68,5 @@ func main() {
             os.Exit(1)
         }
     } ()
-	worker.ProcessWithPool(ctx,DB, 2, 2)
     select {}
 }

@@ -9,6 +9,17 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// JobRow represents a job_tracking record returned from the database.
+type JobRow struct {
+	JobID       pgtype.UUID `db:"job_id"`
+	Status      string      `db:"status"`
+	StartedAt   time.Time   `db:"started_at"`
+	CompletedAt *time.Time  `db:"completed_at"`
+	SourceDir   string      `db:"source_dir"`
+	TotalFiles  int         `db:"total_files"`
+	FilesDone   int         `db:"files_read"`
+}
+
 // CreateJob inserts a new PENDING job into job_tracking and returns the generated job_id.
 func CreateJob(ctx context.Context, DB *pgxpool.Pool, sourceDir string, totalFiles int) (pgtype.UUID, error) {
 	query := `

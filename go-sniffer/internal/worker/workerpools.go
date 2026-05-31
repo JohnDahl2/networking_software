@@ -37,6 +37,13 @@ func ProcessWithPool(
     slog.Debug("Looking for pcaps in", "File:", absPath)
 
     filePaths, _ := filepath.Glob(filepath.Join(pcapDir, "*.pcap"))
+
+    jobId, err := storage.CreateJob(ctx, DB, pcapDir, len(filePaths))
+    if err != nil {
+        slog.Error("There was an issue creating the jobs report", "error:", err)
+        return
+    }
+
     jobs := make(chan string, len(filePaths)) 
     packetStream := make(chan []storage.PacketRow, 100) 
     finalCounts := make(chan int, workerSaverCount)
@@ -44,11 +51,11 @@ func ProcessWithPool(
     var wg sync.WaitGroup
 
     for w := 1; w <= workerSaverCount; w++ {
-        go PacketSaverWorker(ctx, DB, w, packetStream, finalCounts, cancel)
+        go PacketSaverWorker(ctx, DB, jobId, w, packetStream, finalCounts, cancel)
     }
     for w := 1; w <= workerReaderCount; w++ {
         wg.Add(1)
-        go PcapWorker(ctx, w, jobs, packetStream, &wg)
+        go PcapWorker(ctx, DB, jobId, w, jobs, packetStream, &wg)
     }
     for _, path := range filePaths {
         jobs <- path
@@ -65,6 +72,9 @@ func ProcessWithPool(
         totalPackets += <-finalCounts
     }
     
+    now := time.Now()
+    storage.UpdateJobStatus(ctx, DB, jobId, "COMPLETED", &now)
+
     durationSeconds := time.Since(start).Seconds()
     finalReadCount  := atomic.LoadInt64(&TotalPacketsRead)
     finalSavedCount := atomic.LoadInt64(&TotalSavedPackets)

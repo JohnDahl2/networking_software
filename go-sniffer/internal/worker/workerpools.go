@@ -23,6 +23,7 @@ func ProcessWithPool(
 	filePaths []string,
 	workerReaderCount int,
 	workerSaverCount int,
+    workerPreCheckCount int,
 ) {
 	start := time.Now()
 
@@ -31,28 +32,42 @@ func ProcessWithPool(
 
 	slog.Debug("Starting pipeline", "total_files", len(filePaths))
 
-    jobs := make(chan string, len(filePaths)) 
-    packetStream := make(chan []storage.PacketRow, 100) 
-    finalCounts := make(chan int, workerSaverCount)
+	files      := make(chan string, len(filePaths))
+	validFiles := make(chan string, len(filePaths))
+	packetStream := make(chan []storage.PacketRow, 100)
+	finalCounts  := make(chan int, workerSaverCount)
 
-    var wg sync.WaitGroup
+	var checksumWg sync.WaitGroup
+	for w := 1; w <= workerPreCheckCount; w++ {
+		checksumWg.Add(1)
+		go storage.CheckAndInsertSourceFile(ctx, DB, jobId, files, validFiles, &checksumWg)
+	}
 
-    for w := 1; w <= workerSaverCount; w++ {
-        go PacketSaverWorker(ctx, DB, jobId, w, packetStream, finalCounts, cancel)
-    }
-    for w := 1; w <= workerReaderCount; w++ {
-        wg.Add(1)
-        go PcapWorker(ctx, DB, jobId, w, jobs, packetStream, &wg)
-    }
-    for _, path := range filePaths {
-        jobs <- path
-    }
-    close(jobs)
+	// Feed all file paths into the checksum workers.
+	for _, path := range filePaths {
+		files <- path
+	}
+	close(files)
 
-    go func() {
-        wg.Wait()
-        close(packetStream)
-    }()
+	go func() {
+		checksumWg.Wait()
+		close(validFiles)
+	}()
+
+	// Phase 2: packet reader workers consume validFiles.
+	var readerWg sync.WaitGroup
+	for w := 1; w <= workerSaverCount; w++ {
+		go PacketSaverWorker(ctx, DB, jobId, w, packetStream, finalCounts, cancel)
+	}
+	for w := 1; w <= workerReaderCount; w++ {
+		readerWg.Add(1)
+		go PcapWorker(ctx, DB, jobId, w, validFiles, packetStream, &readerWg)
+	}
+
+	go func() {
+		readerWg.Wait()
+		close(packetStream)
+	}()
 
     totalPackets := 0
     for i := 0; i < workerSaverCount; i++ {

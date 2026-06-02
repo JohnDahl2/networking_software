@@ -5,13 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"path/filepath"
 	"time"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 	"go-sniffer/internal/storage"
 	"go-sniffer/internal/worker"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // JobResponse is the API-friendly representation of a job_tracking row.
@@ -117,11 +119,11 @@ func (s *Server) HandleGetJob(w http.ResponseWriter, r *http.Request) {
 func (s *Server) HandleCreateJob(w http.ResponseWriter, r *http.Request) {
 	pcapDir := r.URL.Query().Get("source_dir")
 	if pcapDir == "" {
-		pcapDir = "data/dumb_data"
+		pcapDir = os.Getenv("FILE_FOLDER")
 	}
 
 	// Count files so we can create the job record before starting the pipeline.
-	filePaths, _ := filepath.Glob(filepath.Join(pcapDir, "*.pcap"))
+	filePaths, _ := filepath.Glob(filepath.Join(pcapDir, "*.pcap"))	
 
 	// Create the job synchronously so we have an ID to return immediately.
 	jobID, err := storage.CreateJob(s.Ctx, s.DB, pcapDir, len(filePaths))
@@ -137,7 +139,7 @@ func (s *Server) HandleCreateJob(w http.ResponseWriter, r *http.Request) {
 	s.JobsMu.Unlock()
 
 	go func() {
-		worker.ProcessWithPool(jobCtx, s.DB, jobID, filePaths, 2, 2)
+		worker.ProcessWithPool(jobCtx, s.DB, jobID, filePaths, 2, 2, 2)
 		s.JobsMu.Lock()
 		delete(s.Jobs, jobID.String())
 		s.JobsMu.Unlock()

@@ -7,7 +7,6 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
-	"strconv"
 	"sync"
 	"time"
 
@@ -16,7 +15,7 @@ import (
 	"github.com/google/gopacket/pcapgo"
 )
 
-var dumb_data_folder string = "./data/dumb_data"
+var DumbDataFolder string = "./data/dumb_data"
 
 type TrafficProfile struct {
     Name         string
@@ -161,12 +160,8 @@ func GenerateDummyPcap(
 	slog.Info("dummy pcap file generation complete", "file_name", filepath.Base(filename))
 }
 
-func PackageGenerator() {
+func PackageDumbGenerator(count int, size int) {
     packet_time := time.Date(2026, time.March, 7, 14, 30, 0, 0, time.UTC)
-    
-    // -------------------------------------------------------------------------
-    // STEP 1: DEFINE THE DICT-LIKE BLUEPRINTS (Once for the entire job)
-    // -------------------------------------------------------------------------
     profiles := []TrafficProfile{
         // Profile 1: The Heavy Bulk Data Stream (Light Blue in Wireshark)
         {
@@ -211,18 +206,12 @@ func PackageGenerator() {
         },
     }
 
-    // -------------------------------------------------------------------------
-    // STEP 2: SETUP CONFIGURATION & ENV VARIABLES
-    // -------------------------------------------------------------------------
-	count, _ := strconv.Atoi(os.Getenv("GENERATOR_COUNT"))
-	size, _ := strconv.Atoi(os.Getenv("GENERATOR_SIZE_MB"))
-
 	if count == 0 { count = 3 }
 	if size == 0 { size = 10 }
 
-	ensureDir(dumb_data_folder)
+	ensureDir(DumbDataFolder)
 	
-	matches, _ := filepath.Glob(filepath.Join(dumb_data_folder, "*.pcap"))
+	matches, _ := filepath.Glob(filepath.Join(DumbDataFolder, "*.pcap"))
 	if len(matches) >= count {
 		slog.Info("existing dummy data meets requirements; skipping mock generation", 
 			"found_files", len(matches), 
@@ -245,7 +234,7 @@ func PackageGenerator() {
 	var wg sync.WaitGroup
 	for i := 1; i <= needed; i++ {
 		wg.Add(1)
-		fileName := filepath.Join(dumb_data_folder, fmt.Sprintf("test_batch_%d.pcap", len(matches)+i))
+		fileName := filepath.Join(DumbDataFolder, fmt.Sprintf("test_batch_%d.pcap", len(matches)+i))
         
         // Pass the hourly timestamp offset AND the profiles list down to each worker
         calculatedTime := packet_time.Add(time.Hour * time.Duration(i))
@@ -256,3 +245,21 @@ func PackageGenerator() {
 	wg.Wait()
 	slog.Info("all dummy data generation files are ready for pipeline stress testing")
 }
+
+
+func PackageDumbRemoveFiles() {
+    filePath := filepath.Join(DumbDataFolder, "test_batch_*.pcap")
+    matches, err := filepath.Glob(filePath)
+    if err != nil {
+        slog.Error("Issue with the folder path")
+        return
+    }
+    for _, file := range(matches){
+        err := os.Remove(file)
+        if err != nil {
+            slog.Error("Could not remove file", "file", file, "error", err)
+        }
+    }
+}
+
+

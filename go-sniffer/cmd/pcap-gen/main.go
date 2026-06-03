@@ -15,7 +15,7 @@ var (
 
 var rootCmd = &cobra.Command{
 	Use:   "pcap-gen",
-	Short: "A tool for generating dummy pcap files",
+	Short: "A tool for generating and removing dummy pcap files",
 }
 
 var genCmd = &cobra.Command{
@@ -26,12 +26,21 @@ var genCmd = &cobra.Command{
 	},
 }
 
+var deleteCmd = &cobra.Command{
+    Use:   "delete",
+    Short: "Remove all generated dummy pcap files",
+    Run: func(cmd *cobra.Command, args []string) {
+        pcap.PackageDumbRemoveFiles()
+    },
+}
+
 func init() {
 	genCmd.Flags().IntVarP(&count, "count", "c", 10, "Number of packets to generate")
 	genCmd.Flags().IntVarP(&size, "size", "s", 64, "Size of each packet in bytes")
 
 
 	rootCmd.AddCommand(genCmd)
+	rootCmd.AddCommand(deleteCmd)
 }
 
 func main() {

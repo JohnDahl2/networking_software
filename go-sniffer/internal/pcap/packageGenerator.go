@@ -254,12 +254,17 @@ func PackageDumbRemoveFiles() {
         slog.Error("Issue with the folder path")
         return
     }
+    if len(matches) == 0 {
+        slog.Info("no dummy pcap files found to remove")
+        return
+    }
     for _, file := range(matches){
         err := os.Remove(file)
         if err != nil {
             slog.Error("Could not remove file", "file", file, "error", err)
         }
     }
+    slog.Info("removed dummy pcap files", "count", len(matches))
 }
 
 

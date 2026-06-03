@@ -13,7 +13,6 @@ import (
 
     "go-sniffer/internal/api"
     "go-sniffer/internal/storage"
-	"go-sniffer/internal/pcap"
 )
 
 type WorkerPool struct {
@@ -52,10 +51,6 @@ func main() {
         os.Exit(1)
     }
 
-    demoMode := os.Getenv("DEMO_MODE")
-	if demoMode == "true" {
-		pcap.PackageGenerator()
-	}
     myServer := &api.Server{
         DB: DB,
         Ctx: ctx,

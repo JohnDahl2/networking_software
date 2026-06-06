@@ -6,13 +6,14 @@ import (
 	"net/http"
 	"time"
 
+	"go-sniffer/internal/storage"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Server struct {
-	DB *pgxpool.Pool
+	DB storage.DBStore
 	Ctx context.Context
 	Jobs    map[string]context.CancelFunc
 	JobsMu  sync.Mutex

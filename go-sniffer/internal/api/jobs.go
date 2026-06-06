@@ -47,18 +47,11 @@ func jobRowToResponse(row storage.JobRow) JobResponse {
 
 // HandleListJobs returns all jobs ordered by most recent first.
 func (s *Server) HandleListJobs(w http.ResponseWriter, r *http.Request) {
-	query := `
-		SELECT job_id, status, started_at, completed_at, source_dir, total_files, files_read
-		FROM job_tracking
-		ORDER BY started_at DESC
-	`
-	rows, err := s.DB.Query(r.Context(), query)
+	rows, err := storage.GetAllJobs(s.Ctx, s.DB)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("DB error: %v", err), http.StatusBadGateway)
+		http.Error(w, "error while getting jobs", http.StatusInternalServerError)
 		return
 	}
-	defer rows.Close()
-
 	jobs := []JobResponse{}
 	for rows.Next() {
 		var row storage.JobRow

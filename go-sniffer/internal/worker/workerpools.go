@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"go-sniffer/internal/storage"
 )
@@ -18,7 +17,7 @@ import (
 
 func ProcessWithPool(
 	ctx context.Context,
-	DB *pgxpool.Pool,
+	DB storage.DBStore,
 	jobId pgtype.UUID,
 	filePaths []string,
 	workerReaderCount int,

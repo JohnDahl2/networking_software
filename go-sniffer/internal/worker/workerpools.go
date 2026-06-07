@@ -15,6 +15,18 @@ import (
 
 
 
+// Launcher implements api.PipelineLauncher using the real worker pool.
+type Launcher struct {
+	DB              storage.DBStore
+	ReaderWorkers   int
+	SaverWorkers    int
+	PreCheckWorkers int
+}
+
+func (l *Launcher) Launch(ctx context.Context, jobID pgtype.UUID, paths []string) {
+	ProcessWithPool(ctx, l.DB, jobID, paths, l.ReaderWorkers, l.SaverWorkers, l.PreCheckWorkers)
+}
+
 func ProcessWithPool(
 	ctx context.Context,
 	DB storage.DBStore,

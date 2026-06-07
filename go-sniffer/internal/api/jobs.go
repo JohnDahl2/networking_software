@@ -90,7 +90,15 @@ func (s *Server) HandleCreateJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Count files so we can create the job record before starting the pipeline.
-	filePaths, _ := filepath.Glob(filepath.Join(pcapDir, "*.pcap"))	
+	filePaths, err := filepath.Glob(filepath.Join(pcapDir, "*.pcap"))	
+	if err != nil{
+		http.Error(w, fmt.Sprintf("invalid pcap directory pattern: %v", err), http.StatusBadRequest)
+    	return
+	}
+	if len(filePaths) == 0 {
+		http.Error(w, fmt.Sprintf("no pcap files found in directory: %s", pcapDir), http.StatusBadRequest)
+		return
+	}
 
 	// Create the job synchronously so we have an ID to return immediately.
 	jobID, err := storage.CreateJob(s.Ctx, s.DB, pcapDir, len(filePaths))

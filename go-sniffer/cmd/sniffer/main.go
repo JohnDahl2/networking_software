@@ -9,16 +9,10 @@ import (
 
 
     _ "github.com/jackc/pgx/v5/stdlib" 
-    "github.com/jackc/pgx/v5/pgxpool"
 
     "go-sniffer/internal/api"
     "go-sniffer/internal/storage"
 )
-
-type WorkerPool struct {
-    DB    *pgxpool.Pool
-    Ctx   context.Context
-}
 
 func main() {
     var programLevel slog.Level // Need to set the logging level

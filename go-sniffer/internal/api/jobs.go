@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"go-sniffer/internal/storage"
-	"go-sniffer/internal/worker"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -90,7 +89,7 @@ func (s *Server) HandleCreateJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Count files so we can create the job record before starting the pipeline.
-	filePaths, err := filepath.Glob(filepath.Join(pcapDir, "*.pcap"))	
+	filePaths, err := s.GlobFn(filepath.Join(pcapDir, "*.pcap"))	
 	if err != nil{
 		http.Error(w, fmt.Sprintf("invalid pcap directory pattern: %v", err), http.StatusBadRequest)
     	return
@@ -101,7 +100,7 @@ func (s *Server) HandleCreateJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create the job synchronously so we have an ID to return immediately.
-	jobID, err := storage.CreateJob(r.Context(), s.DB, pcapDir, len(filePaths))
+	jobID, err := s.Store.CreateJob(r.Context(), pcapDir, len(filePaths))
 	if err != nil {
 		http.Error(w, fmt.Sprintf("failed to create job: %v", err), http.StatusInternalServerError)
 		return
@@ -114,7 +113,7 @@ func (s *Server) HandleCreateJob(w http.ResponseWriter, r *http.Request) {
 	s.JobsMu.Unlock()
 
 	go func() {
-		worker.ProcessWithPool(jobCtx, s.DB, jobID, filePaths, 2, 2, 2)
+		s.Launcher.Launch(jobCtx, jobID, filePaths)
 		s.JobsMu.Lock()
 		delete(s.Jobs, jobID.String())
 		s.JobsMu.Unlock()
@@ -135,7 +134,7 @@ func (s *Server) HandleCreateJob(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(jobRowToResponse(row))
 }
 
-// HandleCDeleteJob to delete job.
+// DeleteJob cancels a running job and removes it from the database.
 func (s *Server) DeleteJob(w http.ResponseWriter, r *http.Request) {
 	jobIDStr := chi.URLParam(r, "job_id")
 
@@ -147,13 +146,7 @@ func (s *Server) DeleteJob(w http.ResponseWriter, r *http.Request) {
 	}
 	s.JobsMu.Unlock()
 
-	_, err := s.DB.Exec(r.Context(), `DELETE FROM packet_logs WHERE job_id = $1`, jobIDStr)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("DB error: %v", err), http.StatusBadGateway)
-		return
-	}
-	_, err = s.DB.Exec(r.Context(), `DELETE FROM job_tracking WHERE job_id = $1`, jobIDStr)
-	if err != nil {
+	if err := s.Store.DeleteJob(r.Context(), jobIDStr); err != nil {
 		http.Error(w, fmt.Sprintf("DB error: %v", err), http.StatusBadGateway)
 		return
 	}

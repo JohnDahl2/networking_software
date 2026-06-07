@@ -2,16 +2,17 @@ package storage
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"time"
-	"fmt"
-	"errors"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
 var ErrInvalidUUID = errors.New("invalid job UUID")
 var ErrJobNotFound = errors.New("job not found")
+var ErrDatabase = errors.New("database connection error")
 
 type JobRow struct {
     JobID       pgtype.UUID `db:"job_id"`
@@ -59,7 +60,7 @@ func (s *Store) GetAllJobs(ctx context.Context) ([]JobRow, error) {
 }
 
 // CreateJob inserts a new PENDING job into job_tracking and returns the generated job_id.
-func CreateJob(ctx context.Context, DB DBStore, sourceDir string, totalFiles int) (pgtype.UUID, error) {
+func (s *Store) CreateJob(ctx context.Context, sourceDir string, totalFiles int) (pgtype.UUID, error) {
 	query := `
 		INSERT INTO job_tracking (
 			status, started_at, source_dir, total_files, files_read
@@ -69,7 +70,7 @@ func CreateJob(ctx context.Context, DB DBStore, sourceDir string, totalFiles int
 	`
 
 	var jobID pgtype.UUID
-	err := DB.QueryRow(ctx, query,
+	err := s.DB.QueryRow(ctx, query,
 		"PROCESSING",
 		time.Now(),
 		sourceDir,
@@ -141,4 +142,16 @@ func (s *Store) GetHandleJob(ctx context.Context, jobIDStr string) (*JobRow, err
 	}
 
 	return &row, nil
+}
+
+func (s *Store) DeleteJob(ctx context.Context, jobIDStr string) error {
+	_, err := s.DB.Exec(ctx, `DELETE FROM packet_logs WHERE job_id = $1`, jobIDStr)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrDatabase, err)
+	}
+	_, err = s.DB.Exec(ctx, `DELETE FROM job_tracking WHERE job_id = $1`, jobIDStr)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrDatabase, err)
+	}
+	return nil
 }

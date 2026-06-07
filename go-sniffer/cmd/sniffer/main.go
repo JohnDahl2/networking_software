@@ -1,17 +1,35 @@
 package main
 
 import (
+	"context"
+	"log/slog"
+	"net/http"
 	"os"
-    "os/signal"
-    "syscall"
-    "context"
-    "log/slog"
-    "strings"
-    "net/http"
+	"os/signal"
+	"path/filepath"
+	"strings"
+	"syscall"
+    "strconv"
 
-    "go-sniffer/internal/api"
-    "go-sniffer/internal/storage"
+	"go-sniffer/internal/api"
+	"go-sniffer/internal/storage"
+	"go-sniffer/internal/worker"
 )
+
+type Config struct {
+    ReaderWorkers   int
+    SaverWorkers    int
+    PreCheckWorkers int
+}
+
+func getEnvInt(key string, fallback int) int {
+    if v := os.Getenv(key); v != "" {
+        if n, err := strconv.Atoi(v); err == nil {
+            return n
+        }
+    }
+    return fallback
+}
 
 func main() {
     var programLevel slog.Level // Need to set the logging level
@@ -42,10 +60,23 @@ func main() {
         os.Exit(1)
     }
 
+    cfg := Config{
+        ReaderWorkers:   getEnvInt("WORKER_READERS", 2),
+        SaverWorkers:    getEnvInt("WORKER_SAVERS", 2),
+        PreCheckWorkers: getEnvInt("WORKER_PRECHECKS", 2),
+    }
+
     myServer := &api.Server{
-        DB:    DB,
-        Store: &storage.Store{DB: DB},
-        Jobs: make(map[string]context.CancelFunc),
+        DB:     DB,
+        Store:  &storage.Store{DB: DB},
+        Launcher: &worker.Launcher{
+            DB:              DB,
+            ReaderWorkers:   cfg.ReaderWorkers,
+            SaverWorkers:    cfg.SaverWorkers,
+            PreCheckWorkers: cfg.PreCheckWorkers,
+        },
+        Jobs:   make(map[string]context.CancelFunc),
+        GlobFn: filepath.Glob,
     }
 
     slog.Info("Starting local API server", "port", 3000)

@@ -5,9 +5,23 @@ import (
 	"log/slog"
 	"time"
 	"fmt"
+	"errors"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
+
+var ErrInvalidUUID = errors.New("invalid job UUID")
+var ErrJobNotFound = errors.New("job not found")
+
+type JobRow struct {
+    JobID       pgtype.UUID `db:"job_id"`
+    Status      string      `db:"status"`
+    StartedAt   time.Time   `db:"started_at"`
+    CompletedAt *time.Time  `db:"completed_at"`
+    SourceDir   string      `db:"source_dir"`
+    TotalFiles  int         `db:"total_files"`
+    FilesDone   int         `db:"files_read"`
+}
 
 type Store struct {
 	DB DBStore
@@ -103,4 +117,36 @@ func UpdateJobStatus(ctx context.Context, DB DBStore, jobID pgtype.UUID, status 
 		return err
 	}
 	return nil
+}
+
+func (s *Store) GetHandleJob(ctx context.Context, jobIDStr string) (*JobRow, error) {
+	return GetHandleJob(ctx, s.DB, jobIDStr)
+}
+
+func GetHandleJob(ctx context.Context, DB DBStore, jobIDStr string) (*JobRow, error){
+	var jobID pgtype.UUID
+	if err := jobID.Scan(jobIDStr); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrInvalidUUID, err)
+	}
+
+	query := `
+		SELECT job_id, status, started_at, completed_at, source_dir, total_files, files_read
+		FROM job_tracking
+		WHERE job_id = $1
+	`
+	var row JobRow
+	err := DB.QueryRow(ctx, query, jobID).Scan(
+		&row.JobID,
+		&row.Status,
+		&row.StartedAt,
+		&row.CompletedAt,
+		&row.SourceDir,
+		&row.TotalFiles,
+		&row.FilesDone,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrJobNotFound, err)
+	}
+
+	return &row, nil
 }

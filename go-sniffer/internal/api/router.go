@@ -16,6 +16,7 @@ import (
 // In production, storage.Store satisfies this. In tests, a fake does.
 type JobStore interface {
 	GetAllJobs(ctx context.Context) ([]storage.JobRow, error)
+	GetHandleJob(ctx context.Context,  jobIDStr string) (*storage.JobRow, error)
 }
 
 type Server struct {

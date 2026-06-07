@@ -22,16 +22,6 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
-type JobRow struct {
-    JobID       pgtype.UUID `db:"job_id"`
-    Status      string      `db:"status"`
-    StartedAt   time.Time   `db:"started_at"`
-    CompletedAt *time.Time  `db:"completed_at"`
-    SourceDir   string      `db:"source_dir"`
-    TotalFiles  int         `db:"total_files"`
-    FilesDone   int         `db:"files_read"`
-}
-
 
 func InitDB(ctx context.Context, connString string)(*pgxpool.Pool, error){
 	var err error

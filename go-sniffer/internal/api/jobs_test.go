@@ -10,18 +10,27 @@ import (
 	"net/http"
 	"net/http/httptest"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"go-sniffer/internal/storage"
 )
 
-// fakeJobStore implements JobStore for tests — no DB needed.
 type fakeJobStore struct {
 	jobs []storage.JobRow
+	job *storage.JobRow
 	err  error
 }
 
 func (f *fakeJobStore) GetAllJobs(ctx context.Context) ([]storage.JobRow, error) {
 	return f.jobs, f.err
+}
+
+func (f *fakeJobStore) GetHandleJob(ctx context.Context, jobIDStr string) (*storage.JobRow, error) {
+	var id pgtype.UUID
+	if err := id.Scan(jobIDStr); err != nil {
+		return nil, fmt.Errorf("%w: %w", storage.ErrInvalidUUID, err)
+	}
+	return f.job, f.err
 }
 
 func TestJobRowToResponse(t *testing.T) {
@@ -133,6 +142,79 @@ func TestHandleListJobs(t *testing.T) {
 		
 		if len(response) != 0 {
 			t.Fatalf("got %d jobs, wanted 0", len(response))
+		}
+	})
+}
+
+
+func TestHandleGetJob(t *testing.T) {
+	completedAt := time.Date(2026, 6, 6, 13, 47, 35, 0, time.UTC)
+	jobId := pgtype.UUID{Bytes: [16]byte{0xe6, 0x47, 0xdf, 0x1f, 0xd8, 0xc0, 0x40, 0xe0, 0xa7, 0x07, 0x93, 0xed, 0x08, 0x79, 0xb0, 0xbe}, Valid: true}
+	jobIdString := jobId.String()
+	urlString := fmt.Sprintf("/api/v1/jobs/%v", jobIdString)
+	fakeJob := storage.JobRow{
+		JobID:       jobId,
+		Status:      "COMPLETED",
+		StartedAt:   time.Date(2026, 6, 6, 13, 47, 34, 0, time.UTC),
+		CompletedAt: &completedAt,
+		SourceDir:   "data/dumb_data",
+		TotalFiles:  5,
+		FilesDone:   5,
+	}
+
+	chiCtx := func(jobID string) *http.Request {
+		req := httptest.NewRequest(http.MethodGet, urlString, nil)
+		rctx := chi.NewRouteContext()
+		rctx.URLParams.Add("job_id", jobID)
+		return req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	}
+
+	t.Run("Succesul Run", func(t *testing.T) {
+		var response JobResponse
+		store := &fakeJobStore{
+			job: &fakeJob,
+			err: nil,
+		}
+		s := &Server{Store: store}
+
+		rr := httptest.NewRecorder()
+		s.HandleGetJob(rr, chiCtx(jobIdString))
+
+		if rr.Code != http.StatusOK {
+			t.Errorf("got status %d, want %d", rr.Code, http.StatusOK)
+		}
+		if err := json.NewDecoder(rr.Body).Decode(&response); err != nil {
+			t.Fatalf("failed to decode response body: %v", err)
+		}
+		if response.Status != "COMPLETED" {
+			t.Errorf("got status %q, want %q", response.Status, "COMPLETED")
+		}
+	})
+
+	t.Run("db error returns 500", func(t *testing.T) {
+		store := &fakeJobStore{
+			job: nil,
+			err: fmt.Errorf("connection refused"),
+		}
+		s := &Server{Store: store}
+
+		rr := httptest.NewRecorder()
+		s.HandleGetJob(rr, chiCtx(jobIdString))
+
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("got status %d, want %d", rr.Code, http.StatusInternalServerError)
+		}
+	})
+
+	t.Run("invalid job_id returns bad request", func(t *testing.T) {
+		store := &fakeJobStore{}
+		s := &Server{Store: store}
+
+		rr := httptest.NewRecorder()
+		s.HandleGetJob(rr, chiCtx("not-a-uuid"))
+
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("got status %d, want %d", rr.Code, http.StatusBadRequest)
 		}
 	})
 }

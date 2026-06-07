@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -13,7 +14,6 @@ import (
 	"go-sniffer/internal/worker"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type JobResponse struct {
@@ -63,36 +63,23 @@ func (s *Server) HandleListJobs(w http.ResponseWriter, r *http.Request) {
 
 // HandleGetJob returns a single job by ID.
 func (s *Server) HandleGetJob(w http.ResponseWriter, r *http.Request) {
-	jobIDStr := chi.URLParam(r, "job_id")
+    jobIDStr := chi.URLParam(r, "job_id")
 
-	var jobID pgtype.UUID
-	if err := jobID.Scan(jobIDStr); err != nil {
-		http.Error(w, "invalid job_id", http.StatusBadRequest)
-		return
-	}
+    row, err := s.Store.GetHandleJob(r.Context(), jobIDStr)
+    if err != nil {
+        switch {
+        case errors.Is(err, storage.ErrInvalidUUID):
+            http.Error(w, "invalid job id", http.StatusBadRequest)
+        case errors.Is(err, storage.ErrJobNotFound):
+            http.Error(w, "job not found", http.StatusNotFound)
+        default:
+            http.Error(w, "internal server error", http.StatusInternalServerError)
+        }
+        return
+    }
 
-	query := `
-		SELECT job_id, status, started_at, completed_at, source_dir, total_files, files_read
-		FROM job_tracking
-		WHERE job_id = $1
-	`
-	var row storage.JobRow
-	err := s.DB.QueryRow(r.Context(), query, jobID).Scan(
-		&row.JobID,
-		&row.Status,
-		&row.StartedAt,
-		&row.CompletedAt,
-		&row.SourceDir,
-		&row.TotalFiles,
-		&row.FilesDone,
-	)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("job not found: %v", err), http.StatusNotFound)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(jobRowToResponse(row))
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(jobRowToResponse(*row))
 }
 
 // HandleCreateJob starts a new extraction job in the background and returns the job_id immediately.

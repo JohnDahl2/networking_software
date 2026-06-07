@@ -52,7 +52,8 @@ func main() {
     }
 
     myServer := &api.Server{
-        DB: DB,
+        DB:    DB,
+        Store: &storage.Store{DB: DB},
         Ctx: ctx,
         Jobs: make(map[string]context.CancelFunc),
     }

@@ -6,16 +6,25 @@ import (
 	"net/http"
 	"time"
 
+	"go-sniffer/internal/storage"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// JobStore is the interface the API layer uses to fetch job data.
+// In production, storage.Store satisfies this. In tests, a fake does.
+type JobStore interface {
+	GetAllJobs(ctx context.Context) ([]storage.JobRow, error)
+	GetHandleJob(ctx context.Context,  jobIDStr string) (*storage.JobRow, error)
+}
+
 type Server struct {
-	DB *pgxpool.Pool
-	Ctx context.Context
-	Jobs    map[string]context.CancelFunc
-	JobsMu  sync.Mutex
+	DB     storage.DBStore
+	Store  JobStore
+	Ctx    context.Context
+	Jobs   map[string]context.CancelFunc
+	JobsMu sync.Mutex
 }
 
 func (s *Server) Router() http.Handler {

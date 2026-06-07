@@ -14,7 +14,6 @@ import (
 	"go-sniffer/internal/storage"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcapgo"
@@ -22,7 +21,7 @@ import (
 
 var TotalPacketsRead int64
 
-func PcapWorker(ctx context.Context,DB *pgxpool.Pool, jobId pgtype.UUID, id int, jobs <-chan string, packetStream chan<- []storage.PacketRow, wg *sync.WaitGroup) {
+func PcapWorker(ctx context.Context,DB storage.DBStore, jobId pgtype.UUID, id int, jobs <-chan string, packetStream chan<- []storage.PacketRow, wg *sync.WaitGroup) {
 	defer wg.Done()
 	log := slog.With("reader_id", id)
 

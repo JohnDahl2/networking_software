@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"sync/atomic"
 
-    "github.com/jackc/pgx/v5/pgxpool"
     "github.com/jackc/pgx/v5/pgtype"
     
 	"go-sniffer/internal/storage"
@@ -24,7 +23,7 @@ const (
 
 func PacketSaverWorker(
     ctx context.Context, 
-    DB *pgxpool.Pool,
+    DB storage.DBStore,
     jobId pgtype.UUID,
     id int, 
     packetStream <-chan []storage.PacketRow, 

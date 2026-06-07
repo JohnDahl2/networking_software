@@ -86,7 +86,7 @@ type PacketRow struct {
     StreamID     pgtype.UUID `db:"stream_id"`
 }
 
-func BulkDatabaseCopy(ctx context.Context, DB *pgxpool.Pool, rows []PacketRow) error {
+func BulkDatabaseCopy(ctx context.Context, DB DBStore, rows []PacketRow) error {
     if len(rows) == 0 {
         return nil
     }
@@ -112,7 +112,7 @@ func BulkDatabaseCopy(ctx context.Context, DB *pgxpool.Pool, rows []PacketRow) e
 // CheckAndInsertSourceFile is a worker goroutine that reads file paths from the files channel,
 // computes a SHA256 checksum, and inserts into source_files if the file is new.
 // New (unseen) file paths are sent to the results channel for the pipeline to process.
-func CheckAndInsertSourceFile(ctx context.Context, DB *pgxpool.Pool, jobID pgtype.UUID, files <-chan string, results chan<- string, wg *sync.WaitGroup) {
+func CheckAndInsertSourceFile(ctx context.Context, DB DBStore, jobID pgtype.UUID, files <-chan string, results chan<- string, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	for filePath := range files {

@@ -28,16 +28,12 @@ type Store struct {
 }
 
 func (s *Store) GetAllJobs(ctx context.Context) ([]JobRow, error) {
-	return GetAllJobs(ctx, s.DB)
-}
-
-func GetAllJobs(ctx context.Context, db DBStore) ([]JobRow, error) {
-    query := `
+	query := `
 		SELECT job_id, status, started_at, completed_at, source_dir, total_files, files_read
 		FROM job_tracking
 		ORDER BY started_at DESC
 	`
-    rows, err := db.Query(ctx, query)
+    rows, err := s.DB.Query(ctx, query)
     if err != nil {
         return nil, fmt.Errorf("getting jobs: %w", err)
     }
@@ -120,10 +116,6 @@ func UpdateJobStatus(ctx context.Context, DB DBStore, jobID pgtype.UUID, status 
 }
 
 func (s *Store) GetHandleJob(ctx context.Context, jobIDStr string) (*JobRow, error) {
-	return GetHandleJob(ctx, s.DB, jobIDStr)
-}
-
-func GetHandleJob(ctx context.Context, DB DBStore, jobIDStr string) (*JobRow, error){
 	var jobID pgtype.UUID
 	if err := jobID.Scan(jobIDStr); err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrInvalidUUID, err)
@@ -135,7 +127,7 @@ func GetHandleJob(ctx context.Context, DB DBStore, jobIDStr string) (*JobRow, er
 		WHERE job_id = $1
 	`
 	var row JobRow
-	err := DB.QueryRow(ctx, query, jobID).Scan(
+	err := s.DB.QueryRow(ctx, query, jobID).Scan(
 		&row.JobID,
 		&row.Status,
 		&row.StartedAt,

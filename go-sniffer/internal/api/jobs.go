@@ -16,7 +16,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-// JobResponse is the API-friendly representation of a job_tracking row.
 type JobResponse struct {
 	JobID       string     `json:"job_id"`
 	Status      string     `json:"status"`
@@ -47,31 +46,19 @@ func jobRowToResponse(row storage.JobRow) JobResponse {
 
 // HandleListJobs returns all jobs ordered by most recent first.
 func (s *Server) HandleListJobs(w http.ResponseWriter, r *http.Request) {
-	rows, err := storage.GetAllJobs(s.Ctx, s.DB)
+	rows, err := s.Store.GetAllJobs(r.Context())
 	if err != nil {
 		http.Error(w, "error while getting jobs", http.StatusInternalServerError)
 		return
 	}
-	jobs := []JobResponse{}
-	for rows.Next() {
-		var row storage.JobRow
-		if err := rows.Scan(
-			&row.JobID,
-			&row.Status,
-			&row.StartedAt,
-			&row.CompletedAt,
-			&row.SourceDir,
-			&row.TotalFiles,
-			&row.FilesDone,
-		); err != nil {
-			http.Error(w, "error scanning job row", http.StatusInternalServerError)
-			return
-		}
-		jobs = append(jobs, jobRowToResponse(row))
-	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(jobs)
+	response := make([]JobResponse, len(rows))
+    for i, row := range rows {
+        response[i] = jobRowToResponse(row)
+    }
+
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(response)
 }
 
 // HandleGetJob returns a single job by ID.

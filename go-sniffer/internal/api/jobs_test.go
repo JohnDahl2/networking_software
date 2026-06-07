@@ -1,12 +1,28 @@
 package api
 
 import (
+	"context"
 	"testing"
 	"time"
+	"encoding/json"
+	"fmt"
+
+	"net/http"
+	"net/http/httptest"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"go-sniffer/internal/storage"
 )
+
+// fakeJobStore implements JobStore for tests — no DB needed.
+type fakeJobStore struct {
+	jobs []storage.JobRow
+	err  error
+}
+
+func (f *fakeJobStore) GetAllJobs(ctx context.Context) ([]storage.JobRow, error) {
+	return f.jobs, f.err
+}
 
 func TestJobRowToResponse(t *testing.T) {
 	tests := []struct {
@@ -36,4 +52,87 @@ func TestJobRowToResponse(t *testing.T) {
 			}
 		})
 	}
+}
+
+
+func TestHandleListJobs(t *testing.T) {
+	completedAt := time.Date(2026, 6, 6, 13, 47, 35, 0, time.UTC)
+	fakeJob := storage.JobRow{
+		JobID:       pgtype.UUID{Bytes: [16]byte{0xe6, 0x47, 0xdf, 0x1f, 0xd8, 0xc0, 0x40, 0xe0, 0xa7, 0x07, 0x93, 0xed, 0x08, 0x79, 0xb0, 0xbe}, Valid: true},
+		Status:      "COMPLETED",
+		StartedAt:   time.Date(2026, 6, 6, 13, 47, 34, 0, time.UTC),
+		CompletedAt: &completedAt,
+		SourceDir:   "data/dumb_data",
+		TotalFiles:  5,
+		FilesDone:   5,
+	}
+
+	t.Run("Succesul Run", func(t *testing.T) {
+		var response []JobResponse
+		store := &fakeJobStore{
+			jobs: []storage.JobRow{fakeJob},
+			err: nil,
+		}
+		s := &Server{
+			Store: store,
+		}
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs", nil)
+		rr  := httptest.NewRecorder()
+
+		s.HandleListJobs(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Errorf("got status %d, want %d", rr.Code, http.StatusOK)
+		}
+		if err := json.NewDecoder(rr.Body).Decode(&response); err != nil {
+			t.Fatalf("failed to decode response body: %v", err)
+		}
+		
+		if len(response) != 1 {
+			t.Fatalf("got %d jobs, want 1", len(response))
+		}
+		
+		if response[0].Status != "COMPLETED" {
+			t.Errorf("got status %q, want %q", response[0].Status, "COMPLETED")
+		}
+	})
+
+	t.Run("db error returns 500", func(t *testing.T) {
+		store := &fakeJobStore{
+			jobs: nil,
+			err:  fmt.Errorf("connection refused"),
+		}
+		s := &Server{Store: store}
+	
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs", nil)
+		rr  := httptest.NewRecorder()
+	
+		s.HandleListJobs(rr, req)
+	
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("got status %d, want %d", rr.Code, http.StatusInternalServerError)
+		}
+	})
+
+	t.Run("No data returns", func(t *testing.T) {
+		var response []JobResponse
+		store := &fakeJobStore{
+			jobs: nil,
+		}
+		s := &Server{Store: store}
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs", nil)
+		rr  := httptest.NewRecorder()
+	
+		s.HandleListJobs(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Errorf("got status %d, want %d", rr.Code, http.StatusOK)
+		}
+		if err := json.NewDecoder(rr.Body).Decode(&response); err != nil {
+			t.Fatalf("failed to decode response body: %v", err)
+		}
+		
+		if len(response) != 0 {
+			t.Fatalf("got %d jobs, wanted 0", len(response))
+		}
+	})
 }

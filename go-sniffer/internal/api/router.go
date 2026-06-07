@@ -12,11 +12,18 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 )
 
+// JobStore is the interface the API layer uses to fetch job data.
+// In production, storage.Store satisfies this. In tests, a fake does.
+type JobStore interface {
+	GetAllJobs(ctx context.Context) ([]storage.JobRow, error)
+}
+
 type Server struct {
-	DB storage.DBStore
-	Ctx context.Context
-	Jobs    map[string]context.CancelFunc
-	JobsMu  sync.Mutex
+	DB     storage.DBStore
+	Store  JobStore
+	Ctx    context.Context
+	Jobs   map[string]context.CancelFunc
+	JobsMu sync.Mutex
 }
 
 func (s *Server) Router() http.Handler {

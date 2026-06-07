@@ -107,12 +107,12 @@ Query extracted packet data with optional filtering, field selection, sorting, a
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `limit` | int | 100 | Number of results (max 100) |
-| `fields` | string | all except stream_id | Comma-separated list of fields to return |
+| `fields` | string | all except job_id | Comma-separated list of fields to return |
 | `order` | string | `asc` | Sort order: `asc` or `desc` |
 | `cursor` | string | — | RFC3339 timestamp for cursor-based pagination |
 | `filter` | string | — | Filter expression: `field:op:value` (repeatable) |
 
-**Valid fields:** `time`, `src_ip`, `dst_ip`, `src_port`, `dst_port`, `protocol`, `length`, `tcp_flags`, `stream_id`
+**Valid fields:** `time`, `src_ip`, `dst_ip`, `src_port`, `dst_port`, `protocol`, `length`, `tcp_flags`, `job_id`
 
 **Valid filter operators:** `eq`, `ne`, `gt`, `lt`, `gte`, `lte`
 
@@ -161,7 +161,7 @@ GET /api/v1/packets?fields=src_ip,dst_ip,length&filter=protocol:eq:TCP&order=des
 
 ### Jobs
 
-Extraction jobs process pcap files from the configured source directory and insert packets into the database. Each packet is tagged with the job's UUID via `stream_id`, allowing you to query packets by job.
+Extraction jobs process pcap files from the configured source directory and insert packets into the database. Each packet is tagged with the job's UUID via `job_id`, allowing you to query packets by job.
 
 #### `GET /jobs`
 
@@ -248,10 +248,10 @@ DELETE /api/v1/jobs/550e8400-e29b-41d4-a716-446655440000
 
 ## Querying Packets by Job
 
-Since every packet is tagged with the job's UUID via `stream_id`, you can query all packets from a specific extraction:
+Since every packet is tagged with the job's UUID via `job_id`, you can query all packets from a specific extraction:
 
 ```bash
-GET /api/v1/packets?fields=src_ip,dst_ip,protocol,length,stream_id&filter=stream_id:eq:550e8400-e29b-41d4-a716-446655440000
+GET /api/v1/packets?fields=src_ip,dst_ip,protocol,length,job_id&filter=job_id:eq:550e8400-e29b-41d4-a716-446655440000
 ```
 
 ---

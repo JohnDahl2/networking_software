@@ -139,7 +139,7 @@ func (s *Server) DeleteJob(w http.ResponseWriter, r *http.Request) {
 	}
 	s.JobsMu.Unlock()
 
-	_, err := s.DB.Exec(r.Context(), `DELETE FROM packet_logs WHERE stream_id = $1`, jobIDStr)
+	_, err := s.DB.Exec(r.Context(), `DELETE FROM packet_logs WHERE job_id = $1`, jobIDStr)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("DB error: %v", err), http.StatusBadGateway)
 		return

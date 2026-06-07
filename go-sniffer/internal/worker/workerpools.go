@@ -18,7 +18,7 @@ import (
 func ProcessWithPool(
 	ctx context.Context,
 	DB storage.DBStore,
-	jobId pgtype.UUID,
+	jobID pgtype.UUID,
 	filePaths []string,
 	workerReaderCount int,
 	workerSaverCount int,
@@ -39,7 +39,7 @@ func ProcessWithPool(
 	var checksumWg sync.WaitGroup
 	for w := 1; w <= workerPreCheckCount; w++ {
 		checksumWg.Add(1)
-		go storage.CheckAndInsertSourceFile(ctx, DB, jobId, files, validFiles, &checksumWg)
+		go storage.CheckAndInsertSourceFile(ctx, DB, jobID, files, validFiles, &checksumWg)
 	}
 
 	// Feed all file paths into the checksum workers.
@@ -56,11 +56,11 @@ func ProcessWithPool(
 	// Phase 2: packet reader workers consume validFiles.
 	var readerWg sync.WaitGroup
 	for w := 1; w <= workerSaverCount; w++ {
-		go PacketSaverWorker(ctx, DB, jobId, w, packetStream, finalCounts, cancel)
+		go PacketSaverWorker(ctx, DB, jobID, w, packetStream, finalCounts, cancel)
 	}
 	for w := 1; w <= workerReaderCount; w++ {
 		readerWg.Add(1)
-		go PcapWorker(ctx, DB, jobId, w, validFiles, packetStream, &readerWg)
+		go PcapWorker(ctx, DB, jobID, w, validFiles, packetStream, &readerWg)
 	}
 
 	go func() {
@@ -74,7 +74,7 @@ func ProcessWithPool(
     }
     
     now := time.Now()
-    storage.UpdateJobStatus(ctx, DB, jobId, "COMPLETED", &now)
+    storage.UpdateJobStatus(ctx, DB, jobID, "COMPLETED", &now)
 
     durationSeconds := time.Since(start).Seconds()
     finalReadCount  := atomic.LoadInt64(&TotalPacketsRead)

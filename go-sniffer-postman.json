@@ -29,10 +29,10 @@
           }
         },
         {
-          "name": "List Packets - with stream_id",
+          "name": "List Packets - with job_id",
           "request": {
             "method": "GET",
-            "url": "http://localhost:3000/api/v1/packets?fields=src_ip,dst_ip,stream_id"
+            "url": "http://localhost:3000/api/v1/packets?fields=src_ip,dst_ip,job_id"
           }
         },
         {

@@ -63,9 +63,9 @@ func TestResolveColumns(t *testing.T) {
 			wantErrSubstr: "",
 		},
 		{
-			name:          "stream_id is a valid field",
-			input:         []string{"src_ip", "stream_id"},
-			wantResult:    []string{"src_ip", "stream_id"},
+			name:          "job_id is a valid field",
+			input:         []string{"src_ip", "job_id"},
+			wantResult:    []string{"src_ip", "job_id"},
 			wantErrSubstr: "",
 		},
 		{

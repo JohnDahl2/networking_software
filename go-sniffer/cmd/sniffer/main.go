@@ -7,9 +7,6 @@ import (
     "strings"
     "net/http"
 
-
-    _ "github.com/jackc/pgx/v5/stdlib" 
-
     "go-sniffer/internal/api"
     "go-sniffer/internal/storage"
 )
@@ -54,11 +51,14 @@ func main() {
 
     slog.Info("Starting local API server", "port", 3000)
 
+
+    serverErr := make(chan error, 1)
     go func () {
         if err := http.ListenAndServe(":3000", myServer.Router()); err != nil {
-            slog.Error("API server failed to start or crashed", "error", err)
-            os.Exit(1)
+            serverErr <- err
         }
     } ()
-    select {}
+    err = <-serverErr
+    slog.Error("API server failed to start or crashed", "error", err)
+    os.Exit(1)
 }

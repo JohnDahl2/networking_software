@@ -101,13 +101,13 @@ func (s *Server) HandleCreateJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create the job synchronously so we have an ID to return immediately.
-	jobID, err := storage.CreateJob(s.Ctx, s.DB, pcapDir, len(filePaths))
+	jobID, err := storage.CreateJob(r.Context(), s.DB, pcapDir, len(filePaths))
 	if err != nil {
 		http.Error(w, fmt.Sprintf("failed to create job: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	jobCtx, cancel := context.WithCancel(s.Ctx)
+	jobCtx, cancel := context.WithCancel(context.Background())
 
 	s.JobsMu.Lock()
 	s.Jobs[jobID.String()] = cancel

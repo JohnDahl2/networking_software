@@ -35,10 +35,8 @@ func main() {
         connString = "postgres://postgres:postgres@localhost:5432/sniffer?sslmode=disable"
     }
 
-    ctx := context.Background()
-
     slog.Info("Connecting to TimescaleDB Pool...")
-    DB, err := storage.InitDB(ctx, connString)
+    DB, err := storage.InitDB(context.Background(), connString)
     if err != nil {
         slog.Error("Failed to initialize database pool, terminating", "error", err)
         os.Exit(1)
@@ -47,7 +45,6 @@ func main() {
     myServer := &api.Server{
         DB:    DB,
         Store: &storage.Store{DB: DB},
-        Ctx: ctx,
         Jobs: make(map[string]context.CancelFunc),
     }
 

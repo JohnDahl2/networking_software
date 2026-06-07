@@ -22,7 +22,6 @@ type JobStore interface {
 type Server struct {
 	DB     storage.DBStore
 	Store  JobStore
-	Ctx    context.Context
 	Jobs   map[string]context.CancelFunc
 	JobsMu sync.Mutex
 }

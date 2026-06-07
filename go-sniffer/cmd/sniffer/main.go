@@ -2,6 +2,8 @@ package main
 
 import (
 	"os"
+    "os/signal"
+    "syscall"
     "context"
     "log/slog"
     "strings"
@@ -51,14 +53,23 @@ func main() {
 
     slog.Info("Starting local API server", "port", 3000)
 
-
+    ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+    defer stop()
+    
     serverErr := make(chan error, 1)
-    go func () {
+    go func() {
         if err := http.ListenAndServe(":3000", myServer.Router()); err != nil {
             serverErr <- err
         }
-    } ()
-    err = <-serverErr
-    slog.Error("API server failed to start or crashed", "error", err)
-    os.Exit(1)
+    }()
+    
+    select {
+    case err = <-serverErr:
+        slog.Error("API server failed to start or crashed", "error", err)
+        DB.Close()
+        os.Exit(1)
+    case <-ctx.Done():
+        slog.Info("shutdown signal received, exiting cleanly")
+        DB.Close()
+    }
 }

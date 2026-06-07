@@ -24,7 +24,7 @@ const (
 func PacketSaverWorker(
     ctx context.Context, 
     DB storage.DBStore,
-    jobId pgtype.UUID,
+    jobID pgtype.UUID,
     id int, 
     packetStream <-chan []storage.PacketRow, 
     results chan<- int, 
@@ -48,7 +48,7 @@ func PacketSaverWorker(
 				atomic.AddInt64(&TotalSavedPackets, int64(batchSize))
 				log.Debug("emergency database flush succeeded during shutdown", "flushed_count", batchSize)
 			} else {
-				storage.UpdateJobStatus(ctx, DB, jobId, "FAILED", &now)
+				storage.UpdateJobStatus(ctx, DB, jobID, "FAILED", &now)
 				log.Error("emergency database flush failed during shutdown", "error", err.Error())
 			}
 		}
@@ -74,7 +74,7 @@ func PacketSaverWorker(
 
             if err := storage.BulkDatabaseCopy(ctx,DB, incomingBatch); err != nil {
                 now := time.Now()
-                storage.UpdateJobStatus(ctx, DB, jobId, "FAILED", &now)
+                storage.UpdateJobStatus(ctx, DB, jobID, "FAILED", &now)
                 log.Error("critical database batch write failure; triggering pipeline abort", "error", err.Error())
                 cancel()
                 return

@@ -149,11 +149,11 @@ func TestHandleListJobs(t *testing.T) {
 
 func TestHandleGetJob(t *testing.T) {
 	completedAt := time.Date(2026, 6, 6, 13, 47, 35, 0, time.UTC)
-	jobId := pgtype.UUID{Bytes: [16]byte{0xe6, 0x47, 0xdf, 0x1f, 0xd8, 0xc0, 0x40, 0xe0, 0xa7, 0x07, 0x93, 0xed, 0x08, 0x79, 0xb0, 0xbe}, Valid: true}
-	jobIdString := jobId.String()
-	urlString := fmt.Sprintf("/api/v1/jobs/%v", jobIdString)
+	jobID := pgtype.UUID{Bytes: [16]byte{0xe6, 0x47, 0xdf, 0x1f, 0xd8, 0xc0, 0x40, 0xe0, 0xa7, 0x07, 0x93, 0xed, 0x08, 0x79, 0xb0, 0xbe}, Valid: true}
+	jobIDString := jobID.String()
+	urlString := fmt.Sprintf("/api/v1/jobs/%v", jobIDString)
 	fakeJob := storage.JobRow{
-		JobID:       jobId,
+		JobID:       jobID,
 		Status:      "COMPLETED",
 		StartedAt:   time.Date(2026, 6, 6, 13, 47, 34, 0, time.UTC),
 		CompletedAt: &completedAt,
@@ -178,7 +178,7 @@ func TestHandleGetJob(t *testing.T) {
 		s := &Server{Store: store}
 
 		rr := httptest.NewRecorder()
-		s.HandleGetJob(rr, chiCtx(jobIdString))
+		s.HandleGetJob(rr, chiCtx(jobIDString))
 
 		if rr.Code != http.StatusOK {
 			t.Errorf("got status %d, want %d", rr.Code, http.StatusOK)
@@ -199,7 +199,7 @@ func TestHandleGetJob(t *testing.T) {
 		s := &Server{Store: store}
 
 		rr := httptest.NewRecorder()
-		s.HandleGetJob(rr, chiCtx(jobIdString))
+		s.HandleGetJob(rr, chiCtx(jobIDString))
 
 		if rr.Code != http.StatusInternalServerError {
 			t.Errorf("got status %d, want %d", rr.Code, http.StatusInternalServerError)

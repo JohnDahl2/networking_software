@@ -21,7 +21,7 @@ import (
 
 var TotalPacketsRead int64
 
-func PcapWorker(ctx context.Context,DB storage.DBStore, jobId pgtype.UUID, id int, jobs <-chan string, packetStream chan<- []storage.PacketRow, wg *sync.WaitGroup) {
+func PcapWorker(ctx context.Context,DB storage.DBStore, jobID pgtype.UUID, id int, jobs <-chan string, packetStream chan<- []storage.PacketRow, wg *sync.WaitGroup) {
 	defer wg.Done()
 	log := slog.With("reader_id", id)
 
@@ -127,7 +127,7 @@ func PcapWorker(ctx context.Context,DB storage.DBStore, jobId pgtype.UUID, id in
 					Protocol: protocol,
 					Length:   int32(captureInfo.Length),
 					TCPFlags: tcpFlags,
-					StreamID: jobId,
+					JobID: jobID,
 				}
 
 				currentBatch = append(currentBatch, row)
@@ -155,7 +155,7 @@ func PcapWorker(ctx context.Context,DB storage.DBStore, jobId pgtype.UUID, id in
 		}(path)
 
 		if err == nil {
-			storage.UpdateJobProgress(ctx, DB, jobId, 1)
+			storage.UpdateJobProgress(ctx, DB, jobID, 1)
 		}
 
 		// 4. Clean, isolated error tracking

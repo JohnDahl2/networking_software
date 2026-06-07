@@ -83,7 +83,7 @@ type PacketRow struct {
     Protocol     string     `db:"protocol"`
     Length       int32      `db:"length"`
     TCPFlags     int16      `db:"tcp_flags"`
-    StreamID     pgtype.UUID `db:"stream_id"`
+    JobID     pgtype.UUID `db:"job_id"`
 }
 
 func BulkDatabaseCopy(ctx context.Context, DB DBStore, rows []PacketRow) error {
@@ -96,14 +96,14 @@ func BulkDatabaseCopy(ctx context.Context, DB DBStore, rows []PacketRow) error {
         inputRows = append(inputRows, []interface{}{
             row.Time, row.SrcIP.String(), row.DstIP.String(), 
             row.SrcPort, row.DstPort, row.Protocol, 
-            row.Length, row.TCPFlags, row.StreamID,
+            row.Length, row.TCPFlags, row.JobID,
         })
     }
 
     _, err := DB.CopyFrom(
         ctx,
         pgx.Identifier{"packet_logs"},
-        []string{"time", "src_ip", "dst_ip", "src_port", "dst_port", "protocol", "length", "tcp_flags", "stream_id"},
+        []string{"time", "src_ip", "dst_ip", "src_port", "dst_port", "protocol", "length", "tcp_flags", "job_id"},
         pgx.CopyFromRows(inputRows),
     )
     return err

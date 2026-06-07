@@ -8,7 +8,7 @@ CREATE TABLE packet_logs (
     protocol    VARCHAR(10),
     length      INTEGER NOT NULL,
     tcp_flags   SMALLINT,
-    stream_id   UUID
+    job_id   UUID
 );
 
 -- This transforms standard Postgres into a high-performance time-series hypertable

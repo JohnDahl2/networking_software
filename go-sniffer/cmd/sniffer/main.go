@@ -2,23 +2,16 @@ package main
 
 import (
 	"os"
+    "os/signal"
+    "syscall"
     "context"
     "log/slog"
     "strings"
     "net/http"
 
-
-    _ "github.com/jackc/pgx/v5/stdlib" 
-    "github.com/jackc/pgx/v5/pgxpool"
-
     "go-sniffer/internal/api"
     "go-sniffer/internal/storage"
 )
-
-type WorkerPool struct {
-    DB    *pgxpool.Pool
-    Ctx   context.Context
-}
 
 func main() {
     var programLevel slog.Level // Need to set the logging level
@@ -42,10 +35,8 @@ func main() {
         connString = "postgres://postgres:postgres@localhost:5432/sniffer?sslmode=disable"
     }
 
-    ctx := context.Background()
-
     slog.Info("Connecting to TimescaleDB Pool...")
-    DB, err := storage.InitDB(ctx, connString)
+    DB, err := storage.InitDB(context.Background(), connString)
     if err != nil {
         slog.Error("Failed to initialize database pool, terminating", "error", err)
         os.Exit(1)
@@ -54,17 +45,28 @@ func main() {
     myServer := &api.Server{
         DB:    DB,
         Store: &storage.Store{DB: DB},
-        Ctx: ctx,
         Jobs: make(map[string]context.CancelFunc),
     }
 
     slog.Info("Starting local API server", "port", 3000)
 
-    go func () {
+    ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+    defer stop()
+    
+    serverErr := make(chan error, 1)
+    go func() {
         if err := http.ListenAndServe(":3000", myServer.Router()); err != nil {
-            slog.Error("API server failed to start or crashed", "error", err)
-            os.Exit(1)
+            serverErr <- err
         }
-    } ()
-    select {}
+    }()
+    
+    select {
+    case err = <-serverErr:
+        slog.Error("API server failed to start or crashed", "error", err)
+        DB.Close()
+        os.Exit(1)
+    case <-ctx.Done():
+        slog.Info("shutdown signal received, exiting cleanly")
+        DB.Close()
+    }
 }

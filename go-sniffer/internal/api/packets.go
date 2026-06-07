@@ -33,7 +33,7 @@ var validFields = map[string]bool{
 	"protocol":  true,
 	"length":    true,
 	"tcp_flags": true,
-	"stream_id": true,
+	"job_id": true,
 }
 
 var validExpressions = map[string]string{
@@ -54,7 +54,7 @@ type Packet struct {
 	Protocol  *string   `json:"protocol,omitempty"`
 	Length    *int      `json:"length,omitempty"`
 	TcpFlags  *int      `json:"tcp_flags,omitempty"`
-	StreamID  *string   `json:"stream_id,omitempty"`
+	JobID  *string   `json:"job_id,omitempty"`
 }
 
 type PaginationResponse struct {
@@ -250,8 +250,8 @@ func (s *Server) HandleListPackets(w http.ResponseWriter, r *http.Request) {
 				scanTargets[i] = &row.Length
 			case "tcp_flags":
 				scanTargets[i] = &row.TCPFlags
-			case "stream_id":
-				scanTargets[i] = &row.StreamID
+			case "job_id":
+				scanTargets[i] = &row.JobID
 			}
 		}
 
@@ -286,12 +286,12 @@ func (s *Server) HandleListPackets(w http.ResponseWriter, r *http.Request) {
 			case "tcp_flags":
 				v := int(row.TCPFlags)
 				p.TcpFlags = &v
-			case "stream_id":
+			case "job_id":
 				var sid string
-				if row.StreamID.Valid {
-					sid = row.StreamID.String()
+				if row.JobID.Valid {
+					sid = row.JobID.String()
 				}
-				p.StreamID = &sid
+				p.JobID = &sid
 			}
 		}
 		dataQueried = append(dataQueried, p)

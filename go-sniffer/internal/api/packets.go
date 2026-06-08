@@ -180,9 +180,9 @@ func parseListPacketsParams(q url.Values) (ListPacketsParams, error){
 }
 
 func buildPacketQuery(q ListPacketsParams)(query string, outArgs []any){
-	args := []any{}
+	args := make([]any, 0, len(q.Filters)+2)
+	whereClauses := make([]string, 0, len(q.Filters)+1)
 	argIdx := 1
-	whereClauses := []string{}
 
 	// If cursor is present it becomes the first WHERE clause and first arg.
 	if q.Cursor != nil {
@@ -323,6 +323,5 @@ func (s *Server) HandleListPackets(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
 	w.Write(jsonResponse)
 }

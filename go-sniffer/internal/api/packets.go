@@ -114,12 +114,12 @@ func resolveFilters(filterSlice []string) ([]Filter, error) {
 	}
 	return filters, nil
 }
-var ErrInvalidLimit = errors.New("invalid Limit")
-var ErrInvalidLimitGreaterLess = errors.New("invalid Limit Above or bellow")
-var ErrInvalidField = errors.New("There was an issue with your field err")
-var ErrCursor = errors.New("There was an issue with the pagination")
-var ErrOrder = errors.New("There was an issue with the order passed")
-var ErrFilter = errors.New("There was an error when passing the filter")
+var ErrInvalidLimit = errors.New("invalid limit")
+var ErrInvalidLimitGreaterLess = errors.New("limit out of range") 
+var ErrInvalidField         = errors.New("invalid field") 
+var ErrCursor = errors.New("invalid cursor")
+var ErrOrder  = errors.New("invalid order")
+var ErrFilter = errors.New("invalid filter")
 
 type ListPacketsParams struct {
     Limit   int
@@ -307,28 +307,8 @@ func (s *Server) HandleListPackets(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	packetList, err := parseListPacketsParams(q)
 	if err != nil {
-		switch {
-		case errors.Is(err, ErrInvalidLimitGreaterLess):
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte(fmt.Sprintf("There was an issue with your field err: %v", err)))
-			return
-		case errors.Is(err, ErrInvalidField):
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte(fmt.Sprintf("There was an issue with your field err: %v", err)))
-			return
-		case errors.Is(err, ErrCursor):
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte(fmt.Sprintf("There was an issue with the pagination: %v", err)))
-			return
-		case errors.Is(err, ErrOrder):
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte(fmt.Sprintf("There was an issue with the order: %v", err)))
-			return
-		case errors.Is(err, ErrFilter):
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte(fmt.Sprintf("There was an issue with a filter: %v", err)))
-			return
-	}
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 	query, args := buildPacketQuery(packetList)
 	paginatedData, err := packetQueryDb(r.Context(), packetList, s.DB, query, args)

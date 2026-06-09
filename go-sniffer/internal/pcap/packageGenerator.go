@@ -15,7 +15,7 @@ import (
 	"github.com/google/gopacket/pcapgo"
 )
 
-var DumbDataFolder string = "./data/dumb_data"
+const DefaultDumbDataFolder = "./data/dumb_data"
 
 type TrafficProfile struct {
     Name         string
@@ -151,8 +151,8 @@ func GenerateDummyPcap(
     return nil
 }
 
-func PackageDumbGenerator(count int, size int) {
-    packet_time := time.Date(2026, time.March, 7, 14, 30, 0, 0, time.UTC)
+func PackageDumbGenerator(count int, size int, dataFolder string) {
+    packetTime := time.Date(2026, time.March, 7, 14, 30, 0, 0, time.UTC)
     profiles := []TrafficProfile{
         // Profile 1: The Heavy Bulk Data Stream (Light Blue in Wireshark)
         {
@@ -200,15 +200,15 @@ func PackageDumbGenerator(count int, size int) {
 	if count == 0 { count = 3 }
 	if size == 0 { size = 10 }
 
-	if err := ensureDir(DumbDataFolder); err != nil {
+	if err := ensureDir(dataFolder); err != nil {
         slog.Error("failed to set up data directory", "error", err)
         return
     }
-	
-	matches, _ := filepath.Glob(filepath.Join(DumbDataFolder, "*.pcap"))
+
+	matches, _ := filepath.Glob(filepath.Join(dataFolder, "*.pcap"))
 	if len(matches) >= count {
-		slog.Info("existing dummy data meets requirements; skipping mock generation", 
-			"found_files", len(matches), 
+		slog.Info("existing dummy data meets requirements; skipping mock generation",
+			"found_files", len(matches),
 			"required_count", count,
 		)
 		return
@@ -217,16 +217,16 @@ func PackageDumbGenerator(count int, size int) {
 	needed := count - len(matches)
     packetsPerFile := size * 1250
 
-	slog.Info("starting dummy file generation job", 
-		"files_remaining_to_generate", needed, 
+	slog.Info("starting dummy file generation job",
+		"files_remaining_to_generate", needed,
 		"target_file_size_mb", size,
 	)
 
 	g := new(errgroup.Group)
 	for i := 1; i <= needed; i++ {
         i := i
-		fileName := filepath.Join(DumbDataFolder, fmt.Sprintf("test_batch_%d.pcap", len(matches)+i))
-        calculatedTime := packet_time.Add(time.Hour * time.Duration(i))
+		fileName := filepath.Join(dataFolder, fmt.Sprintf("test_batch_%d.pcap", len(matches)+i))
+        calculatedTime := packetTime.Add(time.Hour * time.Duration(i))
         g.Go(func() error {
             return GenerateDummyPcap(fileName, packetsPerFile, calculatedTime, profiles)
         })
@@ -239,8 +239,8 @@ func PackageDumbGenerator(count int, size int) {
 }
 
 
-func PackageDumbRemoveFiles() {
-    filePath := filepath.Join(DumbDataFolder, "test_batch_*.pcap")
+func PackageDumbRemoveFiles(dataFolder string) {
+    filePath := filepath.Join(dataFolder, "test_batch_*.pcap")
     matches, err := filepath.Glob(filePath)
     if err != nil {
         slog.Error("Issue with the folder path")

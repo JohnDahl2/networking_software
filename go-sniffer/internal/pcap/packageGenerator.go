@@ -17,22 +17,23 @@ import (
 
 const DefaultDumbDataFolder = "./data/dumb_data"
 
+type TCPFlags struct {
+    SYN bool
+    ACK bool
+    RST bool
+    FIN bool
+}
+
 type TrafficProfile struct {
-    Name         string
-    Proto        string 
-    SrcIP        []byte
-    DstIP        []byte
-    SrcPort      int
-    DstPort      int
-    PayloadMin   int
-    PayloadMax   int
-    
-    TCPFlags struct {
-        SYN bool
-        ACK bool
-        RST bool
-        FIN bool
-    }
+    Name       string
+    Proto      string
+    SrcIP      []byte
+    DstIP      []byte
+    SrcPort    int
+    DstPort    int
+    PayloadMin int
+    PayloadMax int
+    TCPFlags   TCPFlags
 }
 
 func ensureDir(dirName string) error {
@@ -72,6 +73,7 @@ func Generate(
 
     tcpLayer := &layers.TCP{}
     udpLayer := &layers.UDP{}
+    ipLayer  := &layers.IPv4{}
 
     // The conveyor belt where gopacket flattens the layers into binary ones and zeros
 	buffer := gopacket.NewSerializeBuffer()
@@ -81,11 +83,11 @@ func Generate(
         buffer.Clear()
 
         profile := profiles[rand.Intn(len(profiles))]
-        ipLayer := &layers.IPv4{
-            Version:  4, 
-            TTL:      64, 
-            SrcIP:    profile.SrcIP, 
-            DstIP:    profile.DstIP,
+        *ipLayer = layers.IPv4{
+            Version: 4,
+            TTL:     64,
+            SrcIP:   profile.SrcIP,
+            DstIP:   profile.DstIP,
         }
 
         switch profile.Proto {
@@ -177,12 +179,7 @@ func GenerateFiles(count int, size int, dataFolder string) {
             DstPort:    443,
             PayloadMin: 0, 
             PayloadMax: 0,
-            TCPFlags: struct {
-                SYN bool
-                ACK bool
-                RST bool
-                FIN bool
-            }{RST: true}, 
+            TCPFlags: TCPFlags{RST: true},
         },
     
         // Profile 3: Local Multicast Discovery Noise (Dark Blue in Wireshark)
@@ -215,8 +212,12 @@ func GenerateFiles(count int, size int, dataFolder string) {
 		return
 	}
 
+	// packetsPerMB is an approximation based on the average payload size
+	// across the defined traffic profiles (~800 bytes/packet average).
+	const packetsPerMB = 1250
+
 	needed := count - len(matches)
-    packetsPerFile := size * 1250
+	packetsPerFile := size * packetsPerMB
 
 	slog.Info("starting dummy file generation job",
 		"files_remaining_to_generate", needed,

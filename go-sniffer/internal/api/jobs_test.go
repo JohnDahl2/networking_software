@@ -29,7 +29,7 @@ func (f *fakeJobStore) GetAllJobs(ctx context.Context) ([]storage.JobRow, error)
 	return f.jobs, f.err
 }
 
-func (f *fakeJobStore) GetHandleJob(ctx context.Context, jobIDStr string) (*storage.JobRow, error) {
+func (f *fakeJobStore) GetJob(ctx context.Context, jobIDStr string) (*storage.JobRow, error) {
 	var id pgtype.UUID
 	if err := id.Scan(jobIDStr); err != nil {
 		return nil, fmt.Errorf("%w: %w", storage.ErrInvalidUUID, err)
@@ -358,7 +358,7 @@ func TestDeleteJob(t *testing.T) {
             Store: &fakeJobStore{},
         }
         rr := httptest.NewRecorder()
-        s.DeleteJob(rr, chiCtx(jobIDStr))
+        s.HandleDeleteJob(rr, chiCtx(jobIDStr))
         if rr.Code != http.StatusNoContent {
             t.Errorf("got %d, want %d", rr.Code, http.StatusNoContent)
         }
@@ -373,7 +373,7 @@ func TestDeleteJob(t *testing.T) {
             Store: &fakeJobStore{},
         }
         rr := httptest.NewRecorder()
-        s.DeleteJob(rr, chiCtx(jobIDStr))
+        s.HandleDeleteJob(rr, chiCtx(jobIDStr))
 
         if rr.Code != http.StatusNoContent {
             t.Errorf("got %d, want %d", rr.Code, http.StatusNoContent)
@@ -389,15 +389,15 @@ func TestDeleteJob(t *testing.T) {
         }
     })
 
-    t.Run("db error returns 502", func(t *testing.T) {
+    t.Run("db error returns 500", func(t *testing.T) {
         s := &Server{
             Jobs:  make(map[string]context.CancelFunc),
             Store: &fakeJobStore{err: fmt.Errorf("connection refused")},
         }
         rr := httptest.NewRecorder()
-        s.DeleteJob(rr, chiCtx(jobIDStr))
-        if rr.Code != http.StatusBadGateway {
-            t.Errorf("got %d, want %d", rr.Code, http.StatusBadGateway)
+        s.HandleDeleteJob(rr, chiCtx(jobIDStr))
+        if rr.Code != http.StatusInternalServerError {
+            t.Errorf("got %d, want %d", rr.Code, http.StatusInternalServerError)
         }
     })
 }

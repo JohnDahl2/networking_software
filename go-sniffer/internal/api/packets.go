@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -54,7 +55,7 @@ type Packet struct {
 	DstPort   *int      `json:"dst_port,omitempty"`
 	Protocol  *string   `json:"protocol,omitempty"`
 	Length    *int      `json:"length,omitempty"`
-	TcpFlags  *int      `json:"tcp_flags,omitempty"`
+	TCPFlags  *int      `json:"tcp_flags,omitempty"`
 	JobID  *string   `json:"job_id,omitempty"`
 }
 
@@ -79,12 +80,12 @@ func resolveOrder(orderstring string) (string, error) {
 	return "", fmt.Errorf("unknown order value: %q, use asc or desc", orderstring)
 }
 
-func resolveColumns(columSlice []string) ([]string, error) {
-	if len(columSlice) == 0 {
+func resolveColumns(columnSlice []string) ([]string, error) {
+	if len(columnSlice) == 0 {
 		return defaultColumns, nil
 	}
 	validatedFields := []string{}
-	for _, f := range columSlice {
+	for _, f := range columnSlice {
 		if !validFields[f] {
 			return nil, fmt.Errorf("unknown field: %q", f)
 		}
@@ -115,7 +116,7 @@ func resolveFilters(filterSlice []string) ([]Filter, error) {
 	return filters, nil
 }
 var ErrInvalidLimit = errors.New("invalid limit")
-var ErrInvalidLimitGreaterLess = errors.New("limit out of range") 
+var ErrLimitOutOfRange = errors.New("limit out of range")
 var ErrInvalidField         = errors.New("invalid field") 
 var ErrCursor = errors.New("invalid cursor")
 var ErrOrder  = errors.New("invalid order")
@@ -146,7 +147,7 @@ func parseListPacketsParams(q url.Values) (ListPacketsParams, error){
 		return ListPacketsParams{}, fmt.Errorf("%w: %w", ErrInvalidLimit, err)
 	}
 	if limit > 100 || limit < 1 {
-		return ListPacketsParams{}, ErrInvalidLimitGreaterLess
+		return ListPacketsParams{}, ErrLimitOutOfRange
 	}
 	if raw := q.Get("fields"); raw != "" {
 		columnSlice = strings.Split(raw, ",")
@@ -252,7 +253,7 @@ var columnMappers = map[string]columnMapper{
 	},
 	"tcp_flags": {
 		scan:  func(r *storage.PacketRow) any { return &r.TCPFlags },
-		mapTo: func(r *storage.PacketRow, p *Packet) { v := int(r.TCPFlags); p.TcpFlags = &v },
+		mapTo: func(r *storage.PacketRow, p *Packet) { v := int(r.TCPFlags); p.TCPFlags = &v },
 	},
 	"job_id": {
 		scan: func(r *storage.PacketRow) any { return &r.JobID },
@@ -313,7 +314,7 @@ func (s *Server) HandleListPackets(w http.ResponseWriter, r *http.Request) {
 	query, args := buildPacketQuery(packetList)
 	paginatedData, err := packetQueryDb(r.Context(), packetList, s.DB, query, args)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	jsonResponse, err := json.Marshal(paginatedData)
@@ -323,5 +324,7 @@ func (s *Server) HandleListPackets(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(jsonResponse)
+	if _, err := w.Write(jsonResponse); err != nil {
+		slog.Error("failed to write packets response", "error", err)
+	}
 }

@@ -243,7 +243,7 @@ func RemoveFiles(dataFolder string) {
     filePath := filepath.Join(dataFolder, "test_batch_*.pcap")
     matches, err := filepath.Glob(filePath)
     if err != nil {
-        slog.Error("Issue with the folder path")
+        slog.Error("failed to glob pcap files", "path", filePath, "error", err)
         return
     }
     if len(matches) == 0 {

@@ -293,15 +293,15 @@ func TestParseListPacketsParams(t *testing.T) {
 
 	t.Run("limit over 100 rejected", func(t *testing.T) {
 		_, err := parseListPacketsParams(url.Values{"limit": {"101"}})
-		if !errors.Is(err, ErrInvalidLimitGreaterLess) {
-			t.Errorf("want ErrInvalidLimitGreaterLess, got %v", err)
+		if !errors.Is(err, ErrLimitOutOfRange) {
+			t.Errorf("want ErrLimitOutOfRange, got %v", err)
 		}
 	})
 
 	t.Run("limit of 0 rejected", func(t *testing.T) {
 		_, err := parseListPacketsParams(url.Values{"limit": {"0"}})
-		if !errors.Is(err, ErrInvalidLimitGreaterLess) {
-			t.Errorf("want ErrInvalidLimitGreaterLess, got %v", err)
+		if !errors.Is(err, ErrLimitOutOfRange) {
+			t.Errorf("want ErrLimitOutOfRange, got %v", err)
 		}
 	})
 
@@ -685,8 +685,8 @@ func TestPacketQueryDb(t *testing.T) {
 		if *p.Protocol != "TCP" {
 			t.Errorf("Protocol: want TCP, got %s", *p.Protocol)
 		}
-		if *p.TcpFlags != 2 {
-			t.Errorf("TcpFlags: want 2, got %d", *p.TcpFlags)
+		if *p.TCPFlags != 2 {
+			t.Errorf("TcpFlags: want 2, got %d", *p.TCPFlags)
 		}
 	})
 }

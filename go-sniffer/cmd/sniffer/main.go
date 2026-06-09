@@ -2,18 +2,21 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
-    "strconv"
+	"time"
 
 	"go-sniffer/internal/api"
 	"go-sniffer/internal/storage"
 	"go-sniffer/internal/worker"
+    "go-sniffer/migrations"
 )
 
 type Config struct {
@@ -32,29 +35,27 @@ func getEnvInt(key string, fallback int) int {
 }
 
 func main() {
-    var programLevel slog.Level // Need to set the logging level
-    switch strings.ToUpper(os.Getenv("LOG_LEVEL")) {
+    var programLevel slog.Level
+	switch strings.ToUpper(os.Getenv("LOG_LEVEL")) {
 	case "DEBUG":
-		programLevel = slog.LevelDebug 
+		programLevel = slog.LevelDebug
 	case "WARN":
-		programLevel = slog.LevelWarn 
+		programLevel = slog.LevelWarn
 	case "ERROR":
 		programLevel = slog.LevelError
 	default:
 		programLevel = slog.LevelInfo
 	}
-    opts := &slog.HandlerOptions{
-		Level: programLevel,
-	}
-    logger := slog.New(slog.NewJSONHandler(os.Stdout, opts))
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: programLevel}))
 	slog.SetDefault(logger)
+
     connString := os.Getenv("DATABASE_URL")
     if connString == "" {
         connString = "postgres://postgres:postgres@localhost:5432/sniffer?sslmode=disable"
     }
 
     slog.Info("Connecting to TimescaleDB Pool...")
-    DB, err := storage.InitDB(context.Background(), connString)
+    DB, err := storage.InitDB(context.Background(), connString, migrations.Files)
     if err != nil {
         slog.Error("Failed to initialize database pool, terminating", "error", err)
         os.Exit(1)
@@ -67,26 +68,32 @@ func main() {
     }
 
     myServer := &api.Server{
-        DB:     DB,
-        Store:  &storage.Store{DB: DB},
-        Launcher: &worker.Launcher{
-            DB:              DB,
-            ReaderWorkers:   cfg.ReaderWorkers,
-            SaverWorkers:    cfg.SaverWorkers,
-            PreCheckWorkers: cfg.PreCheckWorkers,
-        },
-        Jobs:   make(map[string]context.CancelFunc),
-        GlobFn: filepath.Glob,
-    }
+        DB: DB,
+        Store: &storage.Store{DB: DB},
+		Launcher: &worker.Launcher{
+			DB:              DB,
+			ReaderWorkers:   cfg.ReaderWorkers,
+			SaverWorkers:    cfg.SaverWorkers,
+			PreCheckWorkers: cfg.PreCheckWorkers,
+		},
+		Jobs:             make(map[string]context.CancelFunc),
+		GlobFn:           filepath.Glob,
+		DefaultSourceDir: os.Getenv("FILE_FOLDER"),
+	}
+
+    srv := &http.Server{
+		Addr:    ":3000",
+		Handler: myServer.Router(),
+	}
 
     slog.Info("Starting local API server", "port", 3000)
 
     ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
     defer stop()
-    
+
     serverErr := make(chan error, 1)
     go func() {
-        if err := http.ListenAndServe(":3000", myServer.Router()); err != nil {
+        if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
             serverErr <- err
         }
     }()
@@ -97,7 +104,13 @@ func main() {
         DB.Close()
         os.Exit(1)
     case <-ctx.Done():
-        slog.Info("shutdown signal received, exiting cleanly")
-        DB.Close()
-    }
+        slog.Info("shutdown signal received, draining connections...")
+        shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+        defer shutdownCancel()
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			slog.Error("graceful shutdown failed", "error", err)
+		}
+		DB.Close()
+		slog.Info("server stopped cleanly")
+	}
 }

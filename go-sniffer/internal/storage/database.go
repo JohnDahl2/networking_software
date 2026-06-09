@@ -2,32 +2,30 @@ package storage
 
 import (
 	"context"
-	"os"
-	"io"
+	"crypto/sha256"
 	"errors"
 	"fmt"
-	"crypto/sha256"
+	"io"
+	"io/fs"
 	"log/slog"
 	"net/netip"
-	"time"
+	"os"
 	"sync"
-
-	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/jackc/pgx/v5/stdlib"
-	"github.com/pressly/goose/v3"
+	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5/stdlib"
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/pressly/goose/v3"
 )
 
-
-func InitDB(ctx context.Context, connString string)(*pgxpool.Pool, error){
-	var err error
+func InitDB(ctx context.Context, connString string, migrationsFS fs.FS) (*pgxpool.Pool, error) {
 	config, err := pgxpool.ParseConfig(connString)
 	if err != nil {
-		slog.Error("Database config parsing failed", "Error", err)
+		slog.Error("Database config parsing failed", "error", err)
 		return nil, err
 	}
 
@@ -38,26 +36,24 @@ func InitDB(ctx context.Context, connString string)(*pgxpool.Pool, error){
 
 	DB, err := pgxpool.NewWithConfig(ctx, config)
 	if err != nil {
-		slog.Error("Failed to create database pool", "Error", err)
+		slog.Error("Failed to create database pool", "error", err)
 		return nil, err
 	}
 
 	if err = DB.Ping(ctx); err != nil {
-		slog.Error("Database ping failed, host may be down", "Error", err)
+		slog.Error("Database ping failed, host may be down", "error", err)
 		return nil, err
 	}
 
-	if err = RunMigrations(connString); err != nil {
-		slog.Error("Schema migrations failed", "Error", err)
+	if err = RunMigrations(connString, migrationsFS); err != nil {
+		slog.Error("Schema migrations failed", "error", err)
 		return nil, err
 	}
 
 	return DB, nil
 }
 
-
-
-func RunMigrations(connString string) error {
+func RunMigrations(connString string, migrationsFS fs.FS) error {
 	pgxConfig, err := pgx.ParseConfig(connString)
 	if err != nil {
 		return err
@@ -67,23 +63,24 @@ func RunMigrations(connString string) error {
 	defer dbConn.Close()
 
 	slog.Info("Running database schema migrations via Goose...")
-	
+
 	if err := goose.SetDialect("postgres"); err != nil {
 		return err
 	}
-	return goose.Up(dbConn, "./migrations")
+	goose.SetBaseFS(migrationsFS)
+	return goose.Up(dbConn, ".")
 }
 
 type PacketRow struct {
-    Time         time.Time  `db:"time"`
-    SrcIP        netip.Addr `db:"src_ip"`
-    DstIP        netip.Addr `db:"dst_ip"`
-    SrcPort      int32      `db:"src_port"`
-    DstPort      int32      `db:"dst_port"`
-    Protocol     string     `db:"protocol"`
-    Length       int32      `db:"length"`
-    TCPFlags     int16      `db:"tcp_flags"`
-    JobID     pgtype.UUID `db:"job_id"`
+	Time     time.Time  `db:"time"`
+	SrcIP    netip.Addr `db:"src_ip"`
+	DstIP    netip.Addr `db:"dst_ip"`
+	SrcPort  int32      `db:"src_port"`
+	DstPort  int32      `db:"dst_port"`
+	Protocol string     `db:"protocol"`
+	Length   int32      `db:"length"`
+	TCPFlags int16      `db:"tcp_flags"`
+	JobID    pgtype.UUID `db:"job_id"`
 }
 
 func BulkDatabaseCopy(ctx context.Context, DB DBStore, rows []PacketRow) error {
@@ -91,22 +88,22 @@ func BulkDatabaseCopy(ctx context.Context, DB DBStore, rows []PacketRow) error {
         return nil
     }
 
-    var inputRows [][]interface{}
-    for _, row := range rows {
-        inputRows = append(inputRows, []interface{}{
-            row.Time, row.SrcIP.String(), row.DstIP.String(), 
-            row.SrcPort, row.DstPort, row.Protocol, 
-            row.Length, row.TCPFlags, row.JobID,
-        })
-    }
+	inputRows := make([][]any, len(rows))
+	for i, row := range rows {
+		inputRows[i] = []any{
+			row.Time, row.SrcIP.String(), row.DstIP.String(),
+			row.SrcPort, row.DstPort, row.Protocol,
+			row.Length, row.TCPFlags, row.JobID,
+		}
+	}
 
-    _, err := DB.CopyFrom(
-        ctx,
-        pgx.Identifier{"packet_logs"},
-        []string{"time", "src_ip", "dst_ip", "src_port", "dst_port", "protocol", "length", "tcp_flags", "job_id"},
-        pgx.CopyFromRows(inputRows),
-    )
-    return err
+	_, err := DB.CopyFrom(
+		ctx,
+		pgx.Identifier{"packet_logs"},
+		[]string{"time", "src_ip", "dst_ip", "src_port", "dst_port", "protocol", "length", "tcp_flags", "job_id"},
+		pgx.CopyFromRows(inputRows),
+	)
+	return err
 }
 
 // CheckAndInsertSourceFile is a worker goroutine that reads file paths from the files channel,
@@ -116,7 +113,6 @@ func CheckAndInsertSourceFile(ctx context.Context, DB DBStore, jobID pgtype.UUID
 	defer wg.Done()
 
 	for filePath := range files {
-		// Open and hash the file
 		f, err := os.Open(filePath)
 		if err != nil {
 			slog.Error("failed to open file for checksum", "file", filePath, "error", err)
@@ -156,4 +152,3 @@ func CheckAndInsertSourceFile(ctx context.Context, DB DBStore, jobID pgtype.UUID
 		}
 	}
 }
-

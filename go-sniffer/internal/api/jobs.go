@@ -5,15 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
-	"os"
 	"path/filepath"
 	"time"
 
 	"go-sniffer/internal/storage"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type JobResponse struct {
@@ -53,47 +52,51 @@ func (s *Server) HandleListJobs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := make([]JobResponse, len(rows))
-    for i, row := range rows {
-        response[i] = jobRowToResponse(row)
-    }
+	for i, row := range rows {
+		response[i] = jobRowToResponse(row)
+	}
 
-    w.Header().Set("Content-Type", "application/json")
-    json.NewEncoder(w).Encode(response)
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		slog.Error("failed to encode jobs response", "error", err)
+	}
 }
 
 // HandleGetJob returns a single job by ID.
 func (s *Server) HandleGetJob(w http.ResponseWriter, r *http.Request) {
-    jobIDStr := chi.URLParam(r, "job_id")
+	jobIDStr := chi.URLParam(r, "job_id")
 
-    row, err := s.Store.GetHandleJob(r.Context(), jobIDStr)
-    if err != nil {
-        switch {
-        case errors.Is(err, storage.ErrInvalidUUID):
-            http.Error(w, "invalid job id", http.StatusBadRequest)
-        case errors.Is(err, storage.ErrJobNotFound):
-            http.Error(w, "job not found", http.StatusNotFound)
-        default:
-            http.Error(w, "internal server error", http.StatusInternalServerError)
-        }
-        return
-    }
+	row, err := s.Store.GetJob(r.Context(), jobIDStr)
+	if err != nil {
+		switch {
+		case errors.Is(err, storage.ErrInvalidUUID):
+			http.Error(w, "invalid job id", http.StatusBadRequest)
+		case errors.Is(err, storage.ErrJobNotFound):
+			http.Error(w, "job not found", http.StatusNotFound)
+		default:
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+		}
+		return
+	}
 
-    w.Header().Set("Content-Type", "application/json")
-    json.NewEncoder(w).Encode(jobRowToResponse(*row))
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(jobRowToResponse(*row)); err != nil {
+		slog.Error("failed to encode job response", "error", err)
+	}
 }
 
 // HandleCreateJob starts a new extraction job in the background and returns the job_id immediately.
 func (s *Server) HandleCreateJob(w http.ResponseWriter, r *http.Request) {
 	pcapDir := r.URL.Query().Get("source_dir")
 	if pcapDir == "" {
-		pcapDir = os.Getenv("FILE_FOLDER")
+		pcapDir = s.DefaultSourceDir
 	}
 
 	// Count files so we can create the job record before starting the pipeline.
-	filePaths, err := s.GlobFn(filepath.Join(pcapDir, "*.pcap"))	
-	if err != nil{
+	filePaths, err := s.GlobFn(filepath.Join(pcapDir, "*.pcap"))
+	if err != nil {
 		http.Error(w, fmt.Sprintf("invalid pcap directory pattern: %v", err), http.StatusBadRequest)
-    	return
+		return
 	}
 	if len(filePaths) == 0 {
 		http.Error(w, fmt.Sprintf("no pcap files found in directory: %s", pcapDir), http.StatusBadRequest)
@@ -132,16 +135,14 @@ func (s *Server) HandleCreateJob(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
-	json.NewEncoder(w).Encode(jobRowToResponse(row))
+	if err := json.NewEncoder(w).Encode(jobRowToResponse(row)); err != nil {
+		slog.Error("failed to encode create job response", "error", err)
+	}
 }
 
-// DeleteJob cancels a running job and removes it from the database.
-func (s *Server) DeleteJob(w http.ResponseWriter, r *http.Request) {
+// HandleDeleteJob cancels a running job and removes it from the database.
+func (s *Server) HandleDeleteJob(w http.ResponseWriter, r *http.Request) {
 	jobIDStr := chi.URLParam(r, "job_id")
-	var jobID pgtype.UUID
-	if err := jobID.Scan(jobIDStr); err != nil {
-		http.Error(w, fmt.Sprintf("UUID error: %v", err), http.StatusBadGateway)
-	}
 
 	// If the job is still running, cancel it.
 	s.JobsMu.Lock()
@@ -152,7 +153,12 @@ func (s *Server) DeleteJob(w http.ResponseWriter, r *http.Request) {
 	s.JobsMu.Unlock()
 
 	if err := s.Store.DeleteJob(r.Context(), jobIDStr); err != nil {
-		http.Error(w, fmt.Sprintf("DB error: %v", err), http.StatusBadGateway)
+		switch {
+		case errors.Is(err, storage.ErrInvalidUUID):
+			http.Error(w, "invalid job id", http.StatusBadRequest)
+		default:
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+		}
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

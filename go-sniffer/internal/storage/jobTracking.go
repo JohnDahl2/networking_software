@@ -117,7 +117,7 @@ func UpdateJobStatus(ctx context.Context, DB DBStore, jobID pgtype.UUID, status 
 	return nil
 }
 
-func (s *Store) GetHandleJob(ctx context.Context, jobIDStr string) (*JobRow, error) {
+func (s *Store) GetJob(ctx context.Context, jobIDStr string) (*JobRow, error) {
 	var jobID pgtype.UUID
 	if err := jobID.Scan(jobIDStr); err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrInvalidUUID, err)

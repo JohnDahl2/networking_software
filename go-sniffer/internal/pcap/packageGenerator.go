@@ -71,6 +71,7 @@ func Generate(
     }
 
     tcpLayer := &layers.TCP{}
+    udpLayer := &layers.UDP{}
 
     // The conveyor belt where gopacket flattens the layers into binary ones and zeros
 	buffer := gopacket.NewSerializeBuffer()
@@ -113,7 +114,7 @@ func Generate(
         case "UDP":
             ipLayer.Protocol = layers.IPProtocolUDP
 
-            udpLayer := &layers.UDP{
+            *udpLayer = layers.UDP{
                 SrcPort: layers.UDPPort(profile.SrcPort),
                 DstPort: layers.UDPPort(profile.DstPort),
             }

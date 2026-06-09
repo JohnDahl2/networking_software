@@ -45,7 +45,7 @@ func ensureDir(dirName string) error {
     return nil
 }
 
-func GenerateDummyPcap(
+func Generate(
     filename string, 
     packetCount int, 
     packetTime time.Time, 
@@ -151,7 +151,7 @@ func GenerateDummyPcap(
     return nil
 }
 
-func PackageDumbGenerator(count int, size int, dataFolder string) {
+func GenerateFiles(count int, size int, dataFolder string) {
     packetTime := time.Date(2026, time.March, 7, 14, 30, 0, 0, time.UTC)
     profiles := []TrafficProfile{
         // Profile 1: The Heavy Bulk Data Stream (Light Blue in Wireshark)
@@ -228,7 +228,7 @@ func PackageDumbGenerator(count int, size int, dataFolder string) {
 		fileName := filepath.Join(dataFolder, fmt.Sprintf("test_batch_%d.pcap", len(matches)+i))
         calculatedTime := packetTime.Add(time.Hour * time.Duration(i))
         g.Go(func() error {
-            return GenerateDummyPcap(fileName, packetsPerFile, calculatedTime, profiles)
+            return Generate(fileName, packetsPerFile, calculatedTime, profiles)
         })
     }
     if err := g.Wait(); err != nil {
@@ -239,7 +239,7 @@ func PackageDumbGenerator(count int, size int, dataFolder string) {
 }
 
 
-func PackageDumbRemoveFiles(dataFolder string) {
+func RemoveFiles(dataFolder string) {
     filePath := filepath.Join(dataFolder, "test_batch_*.pcap")
     matches, err := filepath.Glob(filePath)
     if err != nil {
@@ -250,7 +250,7 @@ func PackageDumbRemoveFiles(dataFolder string) {
         slog.Info("no dummy pcap files found to remove")
         return
     }
-    for _, file := range(matches){
+    for _, file := range matches {
         err := os.Remove(file)
         if err != nil {
             slog.Error("Could not remove file", "file", file, "error", err)

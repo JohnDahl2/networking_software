@@ -22,7 +22,7 @@ var genCmd = &cobra.Command{
 	Use:   "generate",
 	Short: "Generate dummy pcap files in the specified output directory",
 	Run: func(cmd *cobra.Command, args []string) {
-		pcap.PackageDumbGenerator(count, size, dataFolder)
+		pcap.GenerateFiles(count, size, dataFolder)
 	},
 }
 
@@ -30,7 +30,7 @@ var deleteCmd = &cobra.Command{
 	Use:   "delete",
 	Short: "Remove all generated dummy pcap files from the output directory",
 	Run: func(cmd *cobra.Command, args []string) {
-		pcap.PackageDumbRemoveFiles(dataFolder)
+		pcap.RemoveFiles(dataFolder)
 	},
 }
 

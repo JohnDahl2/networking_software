@@ -12,7 +12,6 @@ import (
 )
 
 // Global atomic counter tracking packets successfully committed to the database.
-var TotalSavedPackets int64
 const (
     baseBackoffThreshold = 100 * time.Millisecond 
     initialBackoff       = 100 * time.Millisecond
@@ -25,6 +24,7 @@ func PacketSaverWorker(
     ctx context.Context, 
     DB storage.DBStore,
     jobID pgtype.UUID,
+    totalSaved *int64,
     id int, 
     packetStream <-chan []storage.PacketRow, 
     results chan<- int, 
@@ -45,7 +45,7 @@ func PacketSaverWorker(
 			if err := storage.BulkDatabaseCopy(flushCtx, DB, lastActiveBatch); err == nil {
 				batchSize := len(lastActiveBatch)
 				localSaved += batchSize
-				atomic.AddInt64(&TotalSavedPackets, int64(batchSize))
+				atomic.AddInt64(totalSaved, int64(batchSize))
 				log.Debug("emergency database flush succeeded during shutdown", "flushed_count", batchSize)
 			} else {
 				storage.UpdateJobStatus(ctx, DB, jobID, "FAILED", &now)
@@ -76,6 +76,7 @@ func PacketSaverWorker(
                 now := time.Now()
                 storage.UpdateJobStatus(ctx, DB, jobID, "FAILED", &now)
                 log.Error("critical database batch write failure; triggering pipeline abort", "error", err.Error())
+                lastActiveBatch = nil
                 cancel()
                 return
             }
@@ -83,7 +84,7 @@ func PacketSaverWorker(
             writeDuration := time.Since(writeStart)
                     
 			localSaved += batchSize
-            atomic.AddInt64(&TotalSavedPackets, int64(batchSize))
+            atomic.AddInt64(totalSaved, int64(batchSize))
 
             lastActiveBatch = nil
             if writeDuration > baseBackoffThreshold {

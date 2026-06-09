@@ -2,8 +2,8 @@ package api
 
 import (
 	"context"
-	"errors"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -13,6 +13,7 @@ import (
 	"go-sniffer/internal/storage"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type JobResponse struct {
@@ -137,6 +138,10 @@ func (s *Server) HandleCreateJob(w http.ResponseWriter, r *http.Request) {
 // DeleteJob cancels a running job and removes it from the database.
 func (s *Server) DeleteJob(w http.ResponseWriter, r *http.Request) {
 	jobIDStr := chi.URLParam(r, "job_id")
+	var jobID pgtype.UUID
+	if err := jobID.Scan(jobIDStr); err != nil {
+		http.Error(w, fmt.Sprintf("UUID error: %v", err), http.StatusBadGateway)
+	}
 
 	// If the job is still running, cancel it.
 	s.JobsMu.Lock()

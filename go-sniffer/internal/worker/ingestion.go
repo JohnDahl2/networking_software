@@ -19,9 +19,8 @@ import (
 	"github.com/google/gopacket/pcapgo"
 )
 
-var TotalPacketsRead int64
 
-func PcapWorker(ctx context.Context,DB storage.DBStore, jobID pgtype.UUID, id int, jobs <-chan string, packetStream chan<- []storage.PacketRow, wg *sync.WaitGroup) {
+func PcapWorker(ctx context.Context,DB storage.DBStore, jobID pgtype.UUID, totalRead *int64, id int, jobs <-chan string, packetStream chan<- []storage.PacketRow, wg *sync.WaitGroup) {
 	defer wg.Done()
 	log := slog.With("reader_id", id)
 
@@ -137,7 +136,7 @@ func PcapWorker(ctx context.Context,DB storage.DBStore, jobID pgtype.UUID, id in
 					case <-ctx.Done():
 						return ctx.Err()
 					}
-                    atomic.AddInt64(&TotalPacketsRead, int64(len(currentBatch)))
+                    atomic.AddInt64(totalRead, int64(len(currentBatch)))
                     currentBatch = make([]storage.PacketRow, 0, batchLimit)
 				}
 			}
@@ -148,7 +147,7 @@ func PcapWorker(ctx context.Context,DB storage.DBStore, jobID pgtype.UUID, id in
 				case <-ctx.Done():
 					return ctx.Err()
 				}
-                atomic.AddInt64(&TotalPacketsRead, int64(len(currentBatch)))
+                atomic.AddInt64(totalRead, int64(len(currentBatch)))
 			}
 
 			return nil

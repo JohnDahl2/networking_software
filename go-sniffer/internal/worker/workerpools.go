@@ -40,6 +40,7 @@ func ProcessWithPool(
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	var totalRead, totalSaved int64
 
 	slog.Debug("Starting pipeline", "total_files", len(filePaths))
 
@@ -68,11 +69,11 @@ func ProcessWithPool(
 	// Phase 2: packet reader workers consume validFiles.
 	var readerWg sync.WaitGroup
 	for w := 1; w <= workerSaverCount; w++ {
-		go PacketSaverWorker(ctx, DB, jobID, w, packetStream, finalCounts, cancel)
+		go PacketSaverWorker(ctx, DB, jobID,&totalSaved, w, packetStream, finalCounts, cancel)
 	}
 	for w := 1; w <= workerReaderCount; w++ {
 		readerWg.Add(1)
-		go PcapWorker(ctx, DB, jobID, w, validFiles, packetStream, &readerWg)
+		go PcapWorker(ctx, DB, jobID, &totalRead, w, validFiles, packetStream, &readerWg)
 	}
 
 	go func() {
@@ -86,11 +87,13 @@ func ProcessWithPool(
     }
     
     now := time.Now()
-    storage.UpdateJobStatus(ctx, DB, jobID, "COMPLETED", &now)
+    updateCtx, updateCancel := context.WithTimeout(context.Background(), 5*time.Second)
+    defer updateCancel()
+    storage.UpdateJobStatus(updateCtx, DB, jobID, "COMPLETED", &now)
 
     durationSeconds := time.Since(start).Seconds()
-    finalReadCount  := atomic.LoadInt64(&TotalPacketsRead)
-    finalSavedCount := atomic.LoadInt64(&TotalSavedPackets)
+    finalReadCount  := atomic.LoadInt64(&totalRead)
+    finalSavedCount := atomic.LoadInt64(&totalSaved)
 
     slog.Debug("All done with packets", "Total packets", totalPackets, "Total files", len(filePaths), "Total Time for processesing", time.Since(start).String())
 

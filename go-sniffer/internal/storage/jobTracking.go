@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -138,18 +139,26 @@ func (s *Store) GetHandleJob(ctx context.Context, jobIDStr string) (*JobRow, err
 		&row.FilesDone,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrJobNotFound, err)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("%w: %w", ErrJobNotFound, err)
+		}
+		return nil, fmt.Errorf("%w: %w", ErrDatabase, err)
 	}
 
 	return &row, nil
 }
 
 func (s *Store) DeleteJob(ctx context.Context, jobIDStr string) error {
-	_, err := s.DB.Exec(ctx, `DELETE FROM packet_logs WHERE job_id = $1`, jobIDStr)
+	var jobID pgtype.UUID
+	if err := jobID.Scan(jobIDStr); err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidUUID, err)
+	}
+
+	_, err := s.DB.Exec(ctx, `DELETE FROM packet_logs WHERE job_id = $1`, jobID)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrDatabase, err)
 	}
-	_, err = s.DB.Exec(ctx, `DELETE FROM job_tracking WHERE job_id = $1`, jobIDStr)
+	_, err = s.DB.Exec(ctx, `DELETE FROM job_tracking WHERE job_id = $1`, jobID)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrDatabase, err)
 	}

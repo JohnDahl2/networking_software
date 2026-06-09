@@ -2,15 +2,15 @@ package main
 
 import (
 	"os"
-	"fmt"
 	"go-sniffer/internal/pcap"
 	"github.com/spf13/cobra"
 )
 
 
 var (
-	count int
-	size  int
+	count      int
+	size       int
+	dataFolder string
 )
 
 var rootCmd = &cobra.Command{
@@ -20,23 +20,25 @@ var rootCmd = &cobra.Command{
 
 var genCmd = &cobra.Command{
 	Use:   "generate",
-	Short: fmt.Sprintf("Generate dummy pcap packages in %s", pcap.DumbDataFolder),
+	Short: "Generate dummy pcap files in the specified output directory",
 	Run: func(cmd *cobra.Command, args []string) {
-		pcap.PackageDumbGenerator(count, size)
+		pcap.GenerateFiles(count, size, dataFolder)
 	},
 }
 
 var deleteCmd = &cobra.Command{
-    Use:   "delete",
-    Short: "Remove all generated dummy pcap files",
-    Run: func(cmd *cobra.Command, args []string) {
-        pcap.PackageDumbRemoveFiles()
-    },
+	Use:   "delete",
+	Short: "Remove all generated dummy pcap files from the output directory",
+	Run: func(cmd *cobra.Command, args []string) {
+		pcap.RemoveFiles(dataFolder)
+	},
 }
 
 func init() {
-	genCmd.Flags().IntVarP(&count, "count", "c", 10, "Number of packets to generate")
-	genCmd.Flags().IntVarP(&size, "size", "s", 64, "Size of each packet in bytes")
+	genCmd.Flags().IntVarP(&count, "count", "c", 10, "Number of pcap files to generate")
+	genCmd.Flags().IntVarP(&size, "size", "s", 64, "Target size of each file in MB")
+	genCmd.Flags().StringVarP(&dataFolder, "output", "o", pcap.DefaultDumbDataFolder, "Output directory for generated pcap files")
+	deleteCmd.Flags().StringVarP(&dataFolder, "output", "o", pcap.DefaultDumbDataFolder, "Directory to remove dummy pcap files from")
 
 
 	rootCmd.AddCommand(genCmd)

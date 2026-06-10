@@ -11,10 +11,9 @@ import (
 	"go-sniffer/internal/storage"
 )
 
-// Global atomic counter tracking packets successfully committed to the database.
 const (
     baseBackoffThreshold = 100 * time.Millisecond 
-    initialBackoff       = 100 * time.Millisecond
+    minBackoff           = 25 * time.Millisecond
     maxBackoff           = 3 * time.Second
     multiplier           = 3
 )
@@ -33,7 +32,7 @@ func PacketSaverWorker(
 	var localSaved int
 	log := slog.With("saver_id", id)
 
-    currentBackoff := 25 * time.Millisecond
+    currentBackoff := minBackoff
 
     var lastActiveBatch []storage.PacketRow
 	defer func() {
@@ -102,7 +101,7 @@ func PacketSaverWorker(
                     return
                 }
             }else {
-                currentBackoff = initialBackoff
+                currentBackoff = minBackoff
             }
         }
     }

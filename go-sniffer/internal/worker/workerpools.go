@@ -12,9 +12,6 @@ import (
 	"go-sniffer/internal/storage"
 )
 
-
-
-
 // Launcher implements api.PipelineLauncher using the real worker pool.
 type Launcher struct {
 	DB              storage.DBStore
@@ -34,7 +31,7 @@ func ProcessWithPool(
 	filePaths []string,
 	workerReaderCount int,
 	workerSaverCount int,
-    workerPreCheckCount int,
+	workerPreCheckCount int,
 ) {
 	start := time.Now()
 
@@ -44,10 +41,10 @@ func ProcessWithPool(
 
 	slog.Debug("Starting pipeline", "total_files", len(filePaths))
 
-	files      := make(chan string, len(filePaths))
+	files := make(chan string, len(filePaths))
 	validFiles := make(chan string, len(filePaths))
 	packetStream := make(chan []storage.PacketRow, 100)
-	finalCounts  := make(chan int, workerSaverCount)
+	finalCounts := make(chan int, workerSaverCount)
 
 	var checksumWg sync.WaitGroup
 	for w := 1; w <= workerPreCheckCount; w++ {
@@ -66,10 +63,10 @@ func ProcessWithPool(
 		close(validFiles)
 	}()
 
-	// Phase 2: packet reader workers consume validFiles.
+	// Start saver and reader workers.
 	var readerWg sync.WaitGroup
 	for w := 1; w <= workerSaverCount; w++ {
-		go PacketSaverWorker(ctx, DB, jobID,&totalSaved, w, packetStream, finalCounts, cancel)
+		go PacketSaverWorker(ctx, DB, jobID, &totalSaved, w, packetStream, finalCounts, cancel)
 	}
 	for w := 1; w <= workerReaderCount; w++ {
 		readerWg.Add(1)
@@ -81,35 +78,35 @@ func ProcessWithPool(
 		close(packetStream)
 	}()
 
-    totalPackets := 0
-    for i := 0; i < workerSaverCount; i++ {
-        totalPackets += <-finalCounts
-    }
-    
-    now := time.Now()
-    updateCtx, updateCancel := context.WithTimeout(context.Background(), 5*time.Second)
-    defer updateCancel()
-    storage.UpdateJobStatus(updateCtx, DB, jobID, "COMPLETED", &now)
+	totalPackets := 0
+	for i := 0; i < workerSaverCount; i++ {
+		totalPackets += <-finalCounts
+	}
 
-    durationSeconds := time.Since(start).Seconds()
-    finalReadCount  := atomic.LoadInt64(&totalRead)
-    finalSavedCount := atomic.LoadInt64(&totalSaved)
+	now := time.Now()
+	updateCtx, updateCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer updateCancel()
+	storage.UpdateJobStatus(updateCtx, DB, jobID, "COMPLETED", &now)
 
-    slog.Debug("All done with packets", "Total packets", totalPackets, "Total files", len(filePaths), "Total Time for processesing", time.Since(start).String())
+	durationSeconds := time.Since(start).Seconds()
+	finalReadCount := atomic.LoadInt64(&totalRead)
+	finalSavedCount := atomic.LoadInt64(&totalSaved)
 
-    var readPPS, writePPS float64
-    if durationSeconds > 0 {
-        readPPS  = float64(finalReadCount) / durationSeconds
-        writePPS = float64(finalSavedCount) / durationSeconds
-    }
+	slog.Debug("pipeline complete", "total_packets", totalPackets, "total_files", len(filePaths), "total_duration", time.Since(start).String())
 
-    slog.Info("pipeline processing performance report",
-        "status",                  "success",
-        "total_files",             len(filePaths),
-        "duration_seconds",        durationSeconds,
-        "total_packets_read",      finalReadCount,
-        "packets_read_per_sec",    readPPS,       
-        "total_packets_inserted",  finalSavedCount,
-        "packets_saved_per_sec",   writePPS,      
-    )
+	var readPPS, writePPS float64
+	if durationSeconds > 0 {
+		readPPS = float64(finalReadCount) / durationSeconds
+		writePPS = float64(finalSavedCount) / durationSeconds
+	}
+
+	slog.Info("pipeline processing performance report",
+		"status", "success",
+		"total_files", len(filePaths),
+		"duration_seconds", durationSeconds,
+		"total_packets_read", finalReadCount,
+		"packets_read_per_sec", readPPS,
+		"total_packets_inserted", finalSavedCount,
+		"packets_saved_per_sec", writePPS,
+	)
 }

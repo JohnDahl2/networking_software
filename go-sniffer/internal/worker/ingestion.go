@@ -3,24 +3,24 @@ package worker
 import (
 	"bufio"
 	"context"
+	"errors"
 	"io"
 	"log/slog"
-	"strings"
-    "sync/atomic"
-	"os"
 	"net/netip"
+	"os"
+	"strings"
 	"sync"
+	"sync/atomic"
 
 	"go-sniffer/internal/storage"
 
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcapgo"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
-
-func PcapWorker(ctx context.Context,DB storage.DBStore, jobID pgtype.UUID, totalRead *int64, id int, jobs <-chan string, packetStream chan<- []storage.PacketRow, wg *sync.WaitGroup) {
+func PcapWorker(ctx context.Context, DB storage.DBStore, jobID pgtype.UUID, totalRead *int64, id int, jobs <-chan string, packetStream chan<- []storage.PacketRow, wg *sync.WaitGroup) {
 	defer wg.Done()
 	log := slog.With("reader_id", id)
 
@@ -32,11 +32,11 @@ func PcapWorker(ctx context.Context,DB storage.DBStore, jobID pgtype.UUID, total
 		default:
 		}
 
-		batchLimit := 500
-		
+		const batchLimit = 500
+
 		err := func(p string) error {
 			log.Debug("starting file extraction sequence", "file_path", p)
-			
+
 			f, err := os.Open(p)
 			if err != nil {
 				return err
@@ -52,7 +52,7 @@ func PcapWorker(ctx context.Context,DB storage.DBStore, jobID pgtype.UUID, total
 			currentBatch := make([]storage.PacketRow, 0, batchLimit)
 
 			for {
-				if len(currentBatch) == 0 { 
+				if len(currentBatch) == 0 {
 					select {
 					case <-ctx.Done():
 						return ctx.Err()
@@ -61,11 +61,11 @@ func PcapWorker(ctx context.Context,DB storage.DBStore, jobID pgtype.UUID, total
 				}
 
 				data, captureInfo, err := reader.ReadPacketData()
-				if err == io.EOF {
+				if errors.Is(err, io.EOF) {
 					break
 				}
 				if err != nil {
-					// If the error message contains "EOF", it means we safely hit the end of the file 
+					// If the error message contains "EOF", it means we safely hit the end of the file
 					// structure but the reader loop just wants to exit. Break out cleanly!
 					if strings.Contains(err.Error(), "EOF") {
 						break
@@ -73,7 +73,7 @@ func PcapWorker(ctx context.Context,DB storage.DBStore, jobID pgtype.UUID, total
 
 					// Real structural corruptions will still surface here cleanly
 					log.Debug("skipping corrupted packet within valid file structure", "file_path", p, "error", err.Error())
-					continue 
+					continue
 				}
 				packet := gopacket.NewPacket(data, reader.LinkType(), gopacket.Default)
 				var srcIP, dstIP netip.Addr
@@ -81,36 +81,35 @@ func PcapWorker(ctx context.Context,DB storage.DBStore, jobID pgtype.UUID, total
 				var protocol string
 				var tcpFlags int16
 
-
 				if ipLayer := packet.Layer(layers.LayerTypeIPv4); ipLayer != nil {
 					ip := ipLayer.(*layers.IPv4)
 					protocol = ip.Protocol.String()
-					
+
 					// Convert the 4-byte array directly to a netip.Addr (Zero Allocations!)
 					srcIP = netip.AddrFrom4([4]byte(ip.SrcIP))
 					dstIP = netip.AddrFrom4([4]byte(ip.DstIP))
-					
+
 				} else if ipv6Layer := packet.Layer(layers.LayerTypeIPv6); ipv6Layer != nil {
 					ip := ipv6Layer.(*layers.IPv6)
 					protocol = ip.NextHeader.String()
-					
+
 					// Convert the 16-byte array directly to a netip.Addr
 					srcIP = netip.AddrFrom16([16]byte(ip.SrcIP))
 					dstIP = netip.AddrFrom16([16]byte(ip.DstIP))
 				} else {
-					// DIAGNOSTIC NOTE: If packets are still hitting NULL, this will tell us what layer 
-					// gopacket actually found instead of IP.
+					// DIAGNOSTIC NOTE: If packets are still hitting NULL, this will tell us what layer
+					// Non-IP packet; skip it.
 					slog.Debug("packet missing expected network layer", "layers", packet.Layers())
 				}
-	
-				// 3. Extract Transport Layer (TCP or UDP)
+
+				// Extract transport layer (TCP or UDP)
 				if tcpLayer := packet.Layer(layers.LayerTypeTCP); tcpLayer != nil {
 					tcp, _ := tcpLayer.(*layers.TCP)
 					srcPort = int32(tcp.SrcPort)
 					dstPort = int32(tcp.DstPort)
-					
+
 					// Read the raw TCP flags byte mask directly (SYN, ACK, FIN, etc.)
-					tcpFlags = int16(packetFlagsToUint8(tcp)) 
+					tcpFlags = int16(packetFlagsToUint8(tcp))
 				} else if udpLayer := packet.Layer(layers.LayerTypeUDP); udpLayer != nil {
 					udp, _ := udpLayer.(*layers.UDP)
 					srcPort = int32(udp.SrcPort)
@@ -126,7 +125,7 @@ func PcapWorker(ctx context.Context,DB storage.DBStore, jobID pgtype.UUID, total
 					Protocol: protocol,
 					Length:   int32(captureInfo.Length),
 					TCPFlags: tcpFlags,
-					JobID: jobID,
+					JobID:    jobID,
 				}
 
 				currentBatch = append(currentBatch, row)
@@ -136,18 +135,18 @@ func PcapWorker(ctx context.Context,DB storage.DBStore, jobID pgtype.UUID, total
 					case <-ctx.Done():
 						return ctx.Err()
 					}
-                    atomic.AddInt64(totalRead, int64(len(currentBatch)))
-                    currentBatch = make([]storage.PacketRow, 0, batchLimit)
+					atomic.AddInt64(totalRead, int64(len(currentBatch)))
+					currentBatch = make([]storage.PacketRow, 0, batchLimit)
 				}
 			}
-			
+
 			if len(currentBatch) > 0 {
 				select {
 				case packetStream <- currentBatch:
 				case <-ctx.Done():
 					return ctx.Err()
 				}
-                atomic.AddInt64(totalRead, int64(len(currentBatch)))
+				atomic.AddInt64(totalRead, int64(len(currentBatch)))
 			}
 
 			return nil
@@ -157,7 +156,7 @@ func PcapWorker(ctx context.Context,DB storage.DBStore, jobID pgtype.UUID, total
 			storage.UpdateJobProgress(ctx, DB, jobID, 1)
 		}
 
-		// 4. Clean, isolated error tracking
+		// Handle errors from the file closure.
 		if err != nil {
 			// If the error was just a deliberate context cancellation, log it as a quiet note, not a massive error failure
 			if ctx.Err() != nil {
@@ -169,14 +168,25 @@ func PcapWorker(ctx context.Context,DB storage.DBStore, jobID pgtype.UUID, total
 	}
 }
 
-
 func packetFlagsToUint8(tcp *layers.TCP) uint8 {
-    var mask uint8
-    if tcp.SYN { mask |= 1 << 1 }
-    if tcp.ACK { mask |= 1 << 4 }
-    if tcp.FIN { mask |= 1 << 0 }
-    if tcp.RST { mask |= 1 << 2 }
-    if tcp.PSH { mask |= 1 << 3 }
-    if tcp.URG { mask |= 1 << 5 }
-    return mask
+	var mask uint8
+	if tcp.SYN {
+		mask |= 1 << 1
+	}
+	if tcp.ACK {
+		mask |= 1 << 4
+	}
+	if tcp.FIN {
+		mask |= 1 << 0
+	}
+	if tcp.RST {
+		mask |= 1 << 2
+	}
+	if tcp.PSH {
+		mask |= 1 << 3
+	}
+	if tcp.URG {
+		mask |= 1 << 5
+	}
+	return mask
 }

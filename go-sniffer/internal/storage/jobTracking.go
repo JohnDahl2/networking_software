@@ -154,12 +154,13 @@ func (s *Store) DeleteJob(ctx context.Context, jobIDStr string) error {
 		return fmt.Errorf("%w: %w", ErrInvalidUUID, err)
 	}
 
-	_, err := s.DB.Exec(ctx, `DELETE FROM packet_logs WHERE job_id = $1`, jobID)
-	if err != nil {
-		return fmt.Errorf("%w: %w", ErrDatabase, err)
-	}
-	_, err = s.DB.Exec(ctx, `DELETE FROM job_tracking WHERE job_id = $1`, jobID)
-	if err != nil {
+	const query = `
+		WITH deleted_packets AS (
+			DELETE FROM packet_logs WHERE job_id = $1
+		)
+		DELETE FROM job_tracking WHERE job_id = $1
+	`
+	if _, err := s.DB.Exec(ctx, query, jobID); err != nil {
 		return fmt.Errorf("%w: %w", ErrDatabase, err)
 	}
 	return nil

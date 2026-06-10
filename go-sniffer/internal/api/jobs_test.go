@@ -45,6 +45,15 @@ func (f *fakeJobStore) DeleteJob(ctx context.Context, jobIDStr string) error {
 	return f.err
 }
 
+type fakePacketStore struct {
+	result PaginationResponse
+	err    error
+}
+
+func (f *fakePacketStore) QueryPackets(_ context.Context, _ ListPacketsParams, _ string, _ []any) (PaginationResponse, error) {
+	return f.result, f.err
+}
+
 type fakeLauncher struct {
 	fn func(ctx context.Context, jobID pgtype.UUID, paths []string)
 }

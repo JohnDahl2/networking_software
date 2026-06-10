@@ -267,9 +267,14 @@ var columnMappers = map[string]columnMapper{
 	},
 }
 
-func packetQueryDb(ctx context.Context, q ListPacketsParams, DB storage.DBStore, query string, args []any) (PaginationResponse, error) {
+// PacketStore holds a DB connection and satisfies the PacketQueries interface.
+type PacketStore struct {
+	DB storage.DBStore
+}
+
+func (ps *PacketStore) QueryPackets(ctx context.Context, q ListPacketsParams, query string, args []any) (PaginationResponse, error) {
 	var nextCursor *string
-	rows, err := DB.Query(ctx, query, args...)
+	rows, err := ps.DB.Query(ctx, query, args...)
 	if err != nil {
 		return PaginationResponse{}, fmt.Errorf("querying packets: %w", err)
 	}
@@ -312,7 +317,7 @@ func (s *Server) HandleListPackets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	query, args := buildPacketQuery(packetList)
-	paginatedData, err := packetQueryDb(r.Context(), packetList, s.DB, query, args)
+	paginatedData, err := s.Packet.QueryPackets(r.Context(), packetList, query, args)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

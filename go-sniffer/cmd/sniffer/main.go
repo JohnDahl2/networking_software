@@ -68,8 +68,8 @@ func main() {
     }
 
     myServer := &api.Server{
-        DB: DB,
-        Store: &storage.Store{DB: DB},
+        Store:  &storage.Store{DB: DB},
+        Packet: &api.PacketStore{DB: DB},
 		Launcher: &worker.Launcher{
 			DB:              DB,
 			ReaderWorkers:   cfg.ReaderWorkers,

@@ -22,6 +22,12 @@ type JobStore interface {
 	DeleteJob(ctx context.Context, jobIDStr string) error
 }
 
+// PacketQueries is the interface HandleListPackets uses to execute packet queries.
+// In production, PacketStore satisfies this. In tests, a fake does.
+type PacketQueries interface {
+	QueryPackets(ctx context.Context, q ListPacketsParams, query string, args []any) (PaginationResponse, error)
+}
+
 // PipelineLauncher runs the pcap processing pipeline for a job.
 // In production, worker.Launcher satisfies this. In tests, a fake does.
 type PipelineLauncher interface {
@@ -29,8 +35,8 @@ type PipelineLauncher interface {
 }
 
 type Server struct {
-	DB              storage.DBStore // used by HandleListPackets for dynamic query building
 	Store           JobStore
+	Packet          PacketQueries
 	Launcher        PipelineLauncher
 	Jobs            map[string]context.CancelFunc
 	JobsMu          sync.Mutex

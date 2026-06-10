@@ -493,7 +493,7 @@ func TestPacketQueryDb(t *testing.T) {
 				return nil, errors.New("connection refused")
 			},
 		}
-		_, err := packetQueryDb(context.Background(), baseParams, db, "SELECT ...", nil)
+		_, err := (&PacketStore{DB: db}).QueryPackets(context.Background(), baseParams, "SELECT ...", nil)
 		if err == nil {
 			t.Fatal("want error, got nil")
 		}
@@ -505,7 +505,7 @@ func TestPacketQueryDb(t *testing.T) {
 				return &mockRows{scanFn: scanTimeProtocol}, nil
 			},
 		}
-		resp, err := packetQueryDb(context.Background(), baseParams, db, "SELECT ...", nil)
+		resp, err := (&PacketStore{DB: db}).QueryPackets(context.Background(), baseParams, "SELECT ...", nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -531,7 +531,7 @@ func TestPacketQueryDb(t *testing.T) {
 				return rows, nil
 			},
 		}
-		resp, err := packetQueryDb(context.Background(), baseParams, db, "SELECT ...", nil)
+		resp, err := (&PacketStore{DB: db}).QueryPackets(context.Background(), baseParams, "SELECT ...", nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -560,7 +560,7 @@ func TestPacketQueryDb(t *testing.T) {
 				return rows, nil
 			},
 		}
-		resp, err := packetQueryDb(context.Background(), baseParams, db, "SELECT ...", nil)
+		resp, err := (&PacketStore{DB: db}).QueryPackets(context.Background(), baseParams, "SELECT ...", nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -584,7 +584,7 @@ func TestPacketQueryDb(t *testing.T) {
 				return rows, nil
 			},
 		}
-		resp, err := packetQueryDb(context.Background(), baseParams, db, "SELECT ...", nil)
+		resp, err := (&PacketStore{DB: db}).QueryPackets(context.Background(), baseParams, "SELECT ...", nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -605,7 +605,7 @@ func TestPacketQueryDb(t *testing.T) {
 				return rows, nil
 			},
 		}
-		_, err := packetQueryDb(context.Background(), baseParams, db, "SELECT ...", nil)
+		_, err := (&PacketStore{DB: db}).QueryPackets(context.Background(), baseParams, "SELECT ...", nil)
 		if err == nil {
 			t.Fatal("want error from scan, got nil")
 		}
@@ -621,7 +621,7 @@ func TestPacketQueryDb(t *testing.T) {
 				return rows, nil
 			},
 		}
-		_, err := packetQueryDb(context.Background(), baseParams, db, "SELECT ...", nil)
+		_, err := (&PacketStore{DB: db}).QueryPackets(context.Background(), baseParams, "SELECT ...", nil)
 		if err == nil {
 			t.Fatal("want error from rows.Err(), got nil")
 		}
@@ -668,7 +668,7 @@ func TestPacketQueryDb(t *testing.T) {
 				return rows, nil
 			},
 		}
-		resp, err := packetQueryDb(context.Background(), fullParams, db, "SELECT ...", nil)
+		resp, err := (&PacketStore{DB: db}).QueryPackets(context.Background(), fullParams, "SELECT ...", nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}

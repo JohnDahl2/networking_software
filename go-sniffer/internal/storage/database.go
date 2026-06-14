@@ -18,7 +18,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
-	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 )
 
@@ -62,7 +61,7 @@ func RunMigrations(connString string, migrationsFS fs.FS) error {
 	dbConn := stdlib.OpenDB(*pgxConfig)
 	defer dbConn.Close()
 
-	slog.Info("Running database schema migrations via Goose...")
+	slog.Info("running database migrations")
 
 	if err := goose.SetDialect("postgres"); err != nil {
 		return err
@@ -72,21 +71,21 @@ func RunMigrations(connString string, migrationsFS fs.FS) error {
 }
 
 type PacketRow struct {
-	Time     time.Time  `db:"time"`
-	SrcIP    netip.Addr `db:"src_ip"`
-	DstIP    netip.Addr `db:"dst_ip"`
-	SrcPort  int32      `db:"src_port"`
-	DstPort  int32      `db:"dst_port"`
-	Protocol string     `db:"protocol"`
-	Length   int32      `db:"length"`
-	TCPFlags int16      `db:"tcp_flags"`
+	Time     time.Time   `db:"time"`
+	SrcIP    netip.Addr  `db:"src_ip"`
+	DstIP    netip.Addr  `db:"dst_ip"`
+	SrcPort  int32       `db:"src_port"`
+	DstPort  int32       `db:"dst_port"`
+	Protocol string      `db:"protocol"`
+	Length   int32       `db:"length"`
+	TCPFlags int16       `db:"tcp_flags"`
 	JobID    pgtype.UUID `db:"job_id"`
 }
 
 func BulkDatabaseCopy(ctx context.Context, DB DBStore, rows []PacketRow) error {
-    if len(rows) == 0 {
-        return nil
-    }
+	if len(rows) == 0 {
+		return nil
+	}
 
 	inputRows := make([][]any, len(rows))
 	for i, row := range rows {
@@ -122,7 +121,7 @@ func CheckAndInsertSourceFile(ctx context.Context, DB DBStore, jobID pgtype.UUID
 		h := sha256.New()
 		_, err = io.CopyN(h, f, 65536)
 		f.Close()
-		if err != nil && err != io.EOF {
+		if err != nil && !errors.Is(err, io.EOF) {
 			slog.Error("failed to compute checksum", "file", filePath, "error", err)
 			continue
 		}

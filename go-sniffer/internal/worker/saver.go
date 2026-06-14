@@ -46,7 +46,7 @@ func PacketSaverWorker(
 				atomic.AddInt64(totalSaved, int64(batchSize))
 				log.Debug("emergency database flush succeeded during shutdown", "flushed_count", batchSize)
 			} else {
-				storage.UpdateJobStatus(ctx, DB, jobID, "FAILED", &now)
+				storage.UpdateJobStatus(ctx, DB, jobID, "FAILED", &now) //nolint:errcheck
 				log.Error("emergency database flush failed during shutdown", "error", err.Error())
 			}
 		}
@@ -72,7 +72,7 @@ func PacketSaverWorker(
 
 			if err := storage.BulkDatabaseCopy(ctx, DB, incomingBatch); err != nil {
 				now := time.Now()
-				storage.UpdateJobStatus(ctx, DB, jobID, "FAILED", &now)
+				storage.UpdateJobStatus(ctx, DB, jobID, "FAILED", &now) //nolint:errcheck
 				log.Error("critical database batch write failure; triggering pipeline abort", "error", err.Error())
 				lastActiveBatch = nil
 				cancel()

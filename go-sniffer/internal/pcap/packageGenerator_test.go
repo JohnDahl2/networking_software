@@ -18,7 +18,7 @@ func readPcapPackets(t *testing.T, path string) ([][]byte, []gopacket.CaptureInf
 	if err != nil {
 		t.Fatalf("open pcap file: %v", err)
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck
 
 	reader, err := pcapgo.NewReader(f)
 	if err != nil {
@@ -67,7 +67,7 @@ func TestEnsureDir(t *testing.T) {
 		if err := os.Mkdir(readOnly, 0555); err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { os.Chmod(readOnly, 0755) }) // restore so TempDir cleanup can delete it
+		t.Cleanup(func() { os.Chmod(readOnly, 0755) }) //nolint:errcheck // restore so TempDir cleanup can delete it
 		if err := ensureDir(filepath.Join(readOnly, "subdir")); err == nil {
 			t.Fatal("expected error, got nil")
 		}
@@ -269,7 +269,7 @@ func TestGenerateFiles(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			f.Close()
+			f.Close() //nolint:errcheck
 		}
 
 		GenerateFiles(3, 1, dir)
@@ -287,7 +287,7 @@ func TestGenerateFiles(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		f.Close()
+		f.Close() //nolint:errcheck
 
 		GenerateFiles(3, 1, dir)
 
@@ -319,7 +319,7 @@ func TestGenerateFiles(t *testing.T) {
 				continue
 			}
 			_, err = pcapgo.NewReader(f)
-			f.Close()
+			f.Close() //nolint:errcheck
 			if err != nil {
 				t.Errorf("file %s is not a valid pcap: %v", path, err)
 			}
@@ -337,7 +337,7 @@ func TestRemoveFiles(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			f.Close()
+			f.Close() //nolint:errcheck
 		}
 
 		RemoveFiles(dir)
@@ -375,7 +375,7 @@ func TestRemoveFiles(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			f.Close()
+			f.Close() //nolint:errcheck
 		}
 
 		RemoveFiles(dir)

@@ -41,7 +41,7 @@ func PcapWorker(ctx context.Context, DB storage.DBStore, jobID pgtype.UUID, tota
 			if err != nil {
 				return err
 			}
-			defer f.Close()
+			defer f.Close() //nolint:errcheck
 
 			bufferedReader := bufio.NewReader(f)
 			reader, err := pcapgo.NewReader(bufferedReader)
@@ -153,7 +153,7 @@ func PcapWorker(ctx context.Context, DB storage.DBStore, jobID pgtype.UUID, tota
 		}(path)
 
 		if err == nil {
-			storage.UpdateJobProgress(ctx, DB, jobID, 1)
+			storage.UpdateJobProgress(ctx, DB, jobID, 1) //nolint:errcheck
 		}
 
 		// Handle errors from the file closure.

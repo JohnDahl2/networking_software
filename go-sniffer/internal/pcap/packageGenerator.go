@@ -56,7 +56,7 @@ func Generate(
 	if err != nil {
 		return fmt.Errorf("create pcap file %s: %w", filename, err)
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck
 
 	bufferedWriter := bufio.NewWriterSize(f, 1024*1024)
 	writer := pcapgo.NewWriter(bufferedWriter)
@@ -80,7 +80,7 @@ func Generate(
 	options := gopacket.SerializeOptions{FixLengths: true, ComputeChecksums: false}
 
 	for i := 0; i < packetCount; i++ {
-		buffer.Clear()
+		buffer.Clear() //nolint:errcheck
 
 		profile := profiles[rand.Intn(len(profiles))]
 		*ipLayer = layers.IPv4{

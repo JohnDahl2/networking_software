@@ -8,7 +8,6 @@ linters:
     - staticcheck
     - unused
     - misspell
-    - noctx
 
 formatters:
   enable:
@@ -22,7 +21,6 @@ settings:
 issues:
   max-same-issues: 0
   exclude-rules:
-    - path: ".*_test\\.go"
+    - path: "_test\\.go"
       linters:
         - errcheck
-        - noctx

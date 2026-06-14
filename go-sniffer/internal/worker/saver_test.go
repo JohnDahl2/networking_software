@@ -163,3 +163,60 @@ func TestPacketSaverWorker_MultipleBatchesAccumulate(t *testing.T) {
 		t.Errorf("want 3 DB writes, got %d", writes)
 	}
 }
+
+func TestPacketSaverWorker_SlowWriteStillSavesCorrectly(t *testing.T) {
+	// A write that exceeds baseBackoffThreshold triggers the backoff branch.
+	// Verify the worker still reports the correct count and exits normally.
+	db := &mockSaverDB{
+		copyFromFn: func(_ context.Context, _ pgx.Identifier, _ []string, _ pgx.CopyFromSource) (int64, error) {
+			time.Sleep(baseBackoffThreshold + 10*time.Millisecond)
+			return 0, nil
+		},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	packetStream := make(chan []storage.PacketRow, 1)
+	results := runSaver(ctx, db, cancel, packetStream)
+
+	packetStream <- makeBatch(5)
+	close(packetStream)
+
+	saved := <-results
+	if saved != 5 {
+		t.Errorf("want 5 saved, got %d", saved)
+	}
+}
+
+func TestPacketSaverWorker_ContextCancelDuringBackoff(t *testing.T) {
+	// After a slow write triggers backoff, a context cancellation should
+	// interrupt the sleep immediately rather than waiting out the full duration.
+	writeDone := make(chan struct{})
+	db := &mockSaverDB{
+		copyFromFn: func(_ context.Context, _ pgx.Identifier, _ []string, _ pgx.CopyFromSource) (int64, error) {
+			time.Sleep(baseBackoffThreshold + 10*time.Millisecond)
+			close(writeDone)
+			return 0, nil
+		},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	packetStream := make(chan []storage.PacketRow, 1)
+	results := runSaver(ctx, db, cancel, packetStream)
+
+	packetStream <- makeBatch(5)
+
+	// Wait for the slow write to finish, then cancel during the backoff window.
+	<-writeDone
+	cancel()
+
+	select {
+	case saved := <-results:
+		if saved != 5 {
+			t.Errorf("want 5 saved, got %d", saved)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("worker did not exit promptly after context cancellation during backoff")
+	}
+}

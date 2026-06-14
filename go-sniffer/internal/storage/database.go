@@ -59,7 +59,7 @@ func RunMigrations(connString string, migrationsFS fs.FS) error {
 	}
 
 	dbConn := stdlib.OpenDB(*pgxConfig)
-	defer dbConn.Close()
+	defer dbConn.Close() //nolint:errcheck
 
 	slog.Info("running database migrations")
 
@@ -120,7 +120,7 @@ func CheckAndInsertSourceFile(ctx context.Context, DB DBStore, jobID pgtype.UUID
 
 		h := sha256.New()
 		_, err = io.CopyN(h, f, 65536)
-		f.Close()
+		f.Close() //nolint:errcheck
 		if err != nil && !errors.Is(err, io.EOF) {
 			slog.Error("failed to compute checksum", "file", filePath, "error", err)
 			continue

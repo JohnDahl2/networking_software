@@ -86,7 +86,7 @@ func ProcessWithPool(
 	now := time.Now()
 	updateCtx, updateCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer updateCancel()
-	storage.UpdateJobStatus(updateCtx, DB, jobID, "COMPLETED", &now)
+	storage.UpdateJobStatus(updateCtx, DB, jobID, "COMPLETED", &now) //nolint:errcheck
 
 	durationSeconds := time.Since(start).Seconds()
 	finalReadCount := atomic.LoadInt64(&totalRead)

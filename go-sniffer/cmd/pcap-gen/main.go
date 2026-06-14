@@ -1,11 +1,10 @@
 package main
 
 import (
-	"os"
-	"go-sniffer/internal/pcap"
 	"github.com/spf13/cobra"
+	"go-sniffer/internal/pcap"
+	"os"
 )
-
 
 var (
 	count      int
@@ -39,7 +38,6 @@ func init() {
 	genCmd.Flags().IntVarP(&size, "size", "s", 64, "Target size of each file in MB")
 	genCmd.Flags().StringVarP(&dataFolder, "output", "o", pcap.DefaultDumbDataFolder, "Output directory for generated pcap files")
 	deleteCmd.Flags().StringVarP(&dataFolder, "output", "o", pcap.DefaultDumbDataFolder, "Directory to remove dummy pcap files from")
-
 
 	rootCmd.AddCommand(genCmd)
 	rootCmd.AddCommand(deleteCmd)

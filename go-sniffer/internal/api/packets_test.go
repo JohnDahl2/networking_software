@@ -1,20 +1,22 @@
 package api
 
 import (
-	"context"
-	"errors"
-	"net/netip"
-	"net/url"
-	"reflect"
-	"testing"
-	"time"
+    "context"
+    "encoding/json"
+    "errors"
+    "net/http"
+    "net/http/httptest"
+    "net/netip"
+    "net/url"
+    "reflect"
+    "testing"
+    "time"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgtype"
-	"go-sniffer/internal/storage"
+    "github.com/jackc/pgx/v5"
+    "github.com/jackc/pgx/v5/pgconn"
+    "github.com/jackc/pgx/v5/pgtype"
+    "go-sniffer/internal/storage"
 )
-
 
 type mockDB struct {
 	queryFn func(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
@@ -689,4 +691,74 @@ func TestPacketQueryDb(t *testing.T) {
 			t.Errorf("TcpFlags: want 2, got %d", *p.TCPFlags)
 		}
 	})
+}
+
+
+func TestHandleListPackets(t *testing.T) {
+    t.Run("happy path returns 200 with JSON body", func(t *testing.T) {
+        s := &Server{
+            Packet: &fakePacketStore{
+                result: PaginationResponse{Data: []Packet{}},
+            },
+        }
+        req := httptest.NewRequest(http.MethodGet, "/api/v1/packets", nil)
+        rr := httptest.NewRecorder()
+        s.HandleListPackets(rr, req)
+
+        if rr.Code != http.StatusOK {
+            t.Errorf("got %d, want 200", rr.Code)
+        }
+        if ct := rr.Header().Get("Content-Type"); ct != "application/json" {
+            t.Errorf("Content-Type: got %q, want application/json", ct)
+        }
+        var resp PaginationResponse
+        if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+            t.Fatalf("failed to decode body: %v", err)
+        }
+        if len(resp.Data) != 0 {
+            t.Errorf("want 0 packets, got %d", len(resp.Data))
+        }
+    })
+
+    t.Run("limit out of range returns 400", func(t *testing.T) {
+        s := &Server{Packet: &fakePacketStore{}}
+        req := httptest.NewRequest(http.MethodGet, "/api/v1/packets?limit=999", nil)
+        rr := httptest.NewRecorder()
+        s.HandleListPackets(rr, req)
+        if rr.Code != http.StatusBadRequest {
+            t.Errorf("got %d, want 400", rr.Code)
+        }
+    })
+
+    t.Run("invalid field returns 400", func(t *testing.T) {
+        s := &Server{Packet: &fakePacketStore{}}
+        req := httptest.NewRequest(http.MethodGet, "/api/v1/packets?fields=password", nil)
+        rr := httptest.NewRecorder()
+        s.HandleListPackets(rr, req)
+        if rr.Code != http.StatusBadRequest {
+            t.Errorf("got %d, want 400", rr.Code)
+        }
+    })
+
+    t.Run("invalid cursor returns 400", func(t *testing.T) {
+        s := &Server{Packet: &fakePacketStore{}}
+        req := httptest.NewRequest(http.MethodGet, "/api/v1/packets?cursor=not-a-time", nil)
+        rr := httptest.NewRecorder()
+        s.HandleListPackets(rr, req)
+        if rr.Code != http.StatusBadRequest {
+            t.Errorf("got %d, want 400", rr.Code)
+        }
+    })
+
+    t.Run("QueryPackets error returns 500", func(t *testing.T) {
+        s := &Server{
+            Packet: &fakePacketStore{err: errors.New("connection refused")},
+        }
+        req := httptest.NewRequest(http.MethodGet, "/api/v1/packets", nil)
+        rr := httptest.NewRecorder()
+        s.HandleListPackets(rr, req)
+        if rr.Code != http.StatusInternalServerError {
+            t.Errorf("got %d, want 500", rr.Code)
+        }
+    })
 }

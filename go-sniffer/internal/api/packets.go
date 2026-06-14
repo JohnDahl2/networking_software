@@ -72,12 +72,14 @@ type Filter struct {
 }
 
 func resolveOrder(orderstring string) (string, error) {
-	if orderstring == "desc" {
+	switch orderstring {
+	case "desc":
 		return "DESC", nil
-	} else if orderstring == "" || orderstring == "asc" {
+	case "", "asc":
 		return "ASC", nil
+	default:
+		return "", fmt.Errorf("unknown order value: %q, use asc or desc", orderstring)
 	}
-	return "", fmt.Errorf("unknown order value: %q, use asc or desc", orderstring)
 }
 
 func resolveColumns(columnSlice []string) ([]string, error) {

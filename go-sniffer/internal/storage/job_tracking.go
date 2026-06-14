@@ -16,48 +16,49 @@ var ErrJobNotFound = errors.New("job not found")
 var ErrDatabase = errors.New("database connection error")
 
 type JobRow struct {
-    JobID       pgtype.UUID `db:"job_id"`
-    Status      string      `db:"status"`
-    StartedAt   time.Time   `db:"started_at"`
-    CompletedAt *time.Time  `db:"completed_at"`
-    SourceDir   string      `db:"source_dir"`
-    TotalFiles  int         `db:"total_files"`
-    FilesDone   int         `db:"files_read"`
+	JobID       pgtype.UUID `db:"job_id"`
+	Status      string      `db:"status"`
+	StartedAt   time.Time   `db:"started_at"`
+	CompletedAt *time.Time  `db:"completed_at"`
+	SourceDir   string      `db:"source_dir"`
+	TotalFiles  int         `db:"total_files"`
+	FilesDone   int         `db:"files_read"`
 }
 
 type Store struct {
 	DB DBStore
 }
 
+// GetAllJobs returns all jobs ordered by most recent first.
 func (s *Store) GetAllJobs(ctx context.Context) ([]JobRow, error) {
 	query := `
 		SELECT job_id, status, started_at, completed_at, source_dir, total_files, files_read
 		FROM job_tracking
 		ORDER BY started_at DESC
 	`
-    rows, err := s.DB.Query(ctx, query)
-    if err != nil {
-        return nil, fmt.Errorf("getting jobs: %w", err)
-    }
-    defer rows.Close()
+	rows, err := s.DB.Query(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("getting jobs: %w", err)
+	}
+	defer rows.Close()
 
-    var jobs []JobRow
-    for rows.Next() {
-        var row JobRow
-        if err := rows.Scan(
-            &row.JobID,
-            &row.Status,
-            &row.StartedAt,
-            &row.CompletedAt,
-            &row.SourceDir,
-            &row.TotalFiles,
-            &row.FilesDone,
-        ); err != nil {
-            return nil, fmt.Errorf("scanning job row: %w", err)
-        }
-        jobs = append(jobs, row)
-    }
-    return jobs, nil
+	var jobs []JobRow
+	for rows.Next() {
+		var row JobRow
+		if err := rows.Scan(
+			&row.JobID,
+			&row.Status,
+			&row.StartedAt,
+			&row.CompletedAt,
+			&row.SourceDir,
+			&row.TotalFiles,
+			&row.FilesDone,
+		); err != nil {
+			return nil, fmt.Errorf("scanning job row: %w", err)
+		}
+		jobs = append(jobs, row)
+	}
+	return jobs, nil
 }
 
 // CreateJob inserts a new PENDING job into job_tracking and returns the generated job_id.
@@ -85,7 +86,8 @@ func (s *Store) CreateJob(ctx context.Context, sourceDir string, totalFiles int)
 	return jobID, nil
 }
 
-// UpdateJobProgress increments files_read and recalculates progress_pct.
+// UpdateJobProgress is a package-level function rather than a Store method so that
+// worker goroutines can call it with only a DBStore, without a full Store reference.
 func UpdateJobProgress(ctx context.Context, DB DBStore, jobID pgtype.UUID, filesRead int) error {
 	query := `
 		UPDATE job_tracking
@@ -117,6 +119,7 @@ func UpdateJobStatus(ctx context.Context, DB DBStore, jobID pgtype.UUID, status 
 	return nil
 }
 
+// GetJob returns a single job by ID.
 func (s *Store) GetJob(ctx context.Context, jobIDStr string) (*JobRow, error) {
 	var jobID pgtype.UUID
 	if err := jobID.Scan(jobIDStr); err != nil {

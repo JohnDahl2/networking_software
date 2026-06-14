@@ -35,12 +35,12 @@ type PipelineLauncher interface {
 }
 
 type Server struct {
-	Store           JobStore
-	Packet          PacketQueries
-	Launcher        PipelineLauncher
-	Jobs            map[string]context.CancelFunc
-	JobsMu          sync.Mutex
-	GlobFn          func(pattern string) ([]string, error)
+	Store            JobStore
+	Packet           PacketQueries
+	Launcher         PipelineLauncher
+	Jobs             map[string]context.CancelFunc
+	JobsMu           sync.Mutex
+	GlobFn           func(pattern string) ([]string, error)
 	DefaultSourceDir string
 }
 

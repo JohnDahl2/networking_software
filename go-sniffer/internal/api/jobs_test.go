@@ -2,19 +2,19 @@ package api
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
-	"encoding/json"
-	"fmt"
 
 	"net/http"
 	"net/http/httptest"
 
-	"go.uber.org/goleak"
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"go-sniffer/internal/storage"
+	"go.uber.org/goleak"
 )
 
 type fakeJobStore struct {
@@ -94,7 +94,6 @@ func TestJobRowToResponse(t *testing.T) {
 	}
 }
 
-
 func TestHandleListJobs(t *testing.T) {
 	completedAt := time.Date(2026, 6, 6, 13, 47, 35, 0, time.UTC)
 	fakeJob := storage.JobRow{
@@ -111,13 +110,13 @@ func TestHandleListJobs(t *testing.T) {
 		var response []JobResponse
 		store := &fakeJobStore{
 			jobs: []storage.JobRow{fakeJob},
-			err: nil,
+			err:  nil,
 		}
 		s := &Server{
 			Store: store,
 		}
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs", nil)
-		rr  := httptest.NewRecorder()
+		rr := httptest.NewRecorder()
 
 		s.HandleListJobs(rr, req)
 
@@ -127,11 +126,11 @@ func TestHandleListJobs(t *testing.T) {
 		if err := json.NewDecoder(rr.Body).Decode(&response); err != nil {
 			t.Fatalf("failed to decode response body: %v", err)
 		}
-		
+
 		if len(response) != 1 {
 			t.Fatalf("got %d jobs, want 1", len(response))
 		}
-		
+
 		if response[0].Status != "COMPLETED" {
 			t.Errorf("got status %q, want %q", response[0].Status, "COMPLETED")
 		}
@@ -143,12 +142,12 @@ func TestHandleListJobs(t *testing.T) {
 			err:  fmt.Errorf("connection refused"),
 		}
 		s := &Server{Store: store}
-	
+
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs", nil)
-		rr  := httptest.NewRecorder()
-	
+		rr := httptest.NewRecorder()
+
 		s.HandleListJobs(rr, req)
-	
+
 		if rr.Code != http.StatusInternalServerError {
 			t.Errorf("got status %d, want %d", rr.Code, http.StatusInternalServerError)
 		}
@@ -161,8 +160,8 @@ func TestHandleListJobs(t *testing.T) {
 		}
 		s := &Server{Store: store}
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs", nil)
-		rr  := httptest.NewRecorder()
-	
+		rr := httptest.NewRecorder()
+
 		s.HandleListJobs(rr, req)
 		if rr.Code != http.StatusOK {
 			t.Errorf("got status %d, want %d", rr.Code, http.StatusOK)
@@ -170,13 +169,12 @@ func TestHandleListJobs(t *testing.T) {
 		if err := json.NewDecoder(rr.Body).Decode(&response); err != nil {
 			t.Fatalf("failed to decode response body: %v", err)
 		}
-		
+
 		if len(response) != 0 {
 			t.Fatalf("got %d jobs, wanted 0", len(response))
 		}
 	})
 }
-
 
 func TestHandleGetJob(t *testing.T) {
 	completedAt := time.Date(2026, 6, 6, 13, 47, 35, 0, time.UTC)
@@ -251,162 +249,162 @@ func TestHandleGetJob(t *testing.T) {
 }
 
 func TestHandleCreateJob(t *testing.T) {
-    defer goleak.VerifyNone(t)
+	defer goleak.VerifyNone(t)
 
-    fakeJobID := pgtype.UUID{
-        Bytes: [16]byte{0xe6, 0x47, 0xdf, 0x1f, 0xd8, 0xc0, 0x40, 0xe0, 0xa7, 0x07, 0x93, 0xed, 0x08, 0x79, 0xb0, 0xbe},
-        Valid: true,
-    }
+	fakeJobID := pgtype.UUID{
+		Bytes: [16]byte{0xe6, 0x47, 0xdf, 0x1f, 0xd8, 0xc0, 0x40, 0xe0, 0xa7, 0x07, 0x93, 0xed, 0x08, 0x79, 0xb0, 0xbe},
+		Valid: true,
+	}
 
-    t.Run("glob error returns 400", func(t *testing.T) {
-        s := &Server{
-            Jobs:   make(map[string]context.CancelFunc),
-            GlobFn: func(pattern string) ([]string, error) {
-                return nil, fmt.Errorf("bad pattern")
-            },
-        }
-        req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs?source_dir=/data", nil)
-        rr := httptest.NewRecorder()
-        s.HandleCreateJob(rr, req)
-        if rr.Code != http.StatusBadRequest {
-            t.Errorf("got %d, want %d", rr.Code, http.StatusBadRequest)
-        }
-    })
+	t.Run("glob error returns 400", func(t *testing.T) {
+		s := &Server{
+			Jobs: make(map[string]context.CancelFunc),
+			GlobFn: func(pattern string) ([]string, error) {
+				return nil, fmt.Errorf("bad pattern")
+			},
+		}
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs?source_dir=/data", nil)
+		rr := httptest.NewRecorder()
+		s.HandleCreateJob(rr, req)
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("got %d, want %d", rr.Code, http.StatusBadRequest)
+		}
+	})
 
-    t.Run("no pcap files found returns 400", func(t *testing.T) {
-        s := &Server{
-            Jobs:   make(map[string]context.CancelFunc),
-            GlobFn: func(pattern string) ([]string, error) {
-                return []string{}, nil
-            },
-        }
-        req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs?source_dir=/data", nil)
-        rr := httptest.NewRecorder()
-        s.HandleCreateJob(rr, req)
-        if rr.Code != http.StatusBadRequest {
-            t.Errorf("got %d, want %d", rr.Code, http.StatusBadRequest)
-        }
-    })
+	t.Run("no pcap files found returns 400", func(t *testing.T) {
+		s := &Server{
+			Jobs: make(map[string]context.CancelFunc),
+			GlobFn: func(pattern string) ([]string, error) {
+				return []string{}, nil
+			},
+		}
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs?source_dir=/data", nil)
+		rr := httptest.NewRecorder()
+		s.HandleCreateJob(rr, req)
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("got %d, want %d", rr.Code, http.StatusBadRequest)
+		}
+	})
 
-    t.Run("db create fails returns 500", func(t *testing.T) {
-        s := &Server{
-            Jobs: make(map[string]context.CancelFunc),
-            GlobFn: func(pattern string) ([]string, error) {
-                return []string{"file1.pcap"}, nil
-            },
-            Store: &fakeJobStore{
-                createJobErr: fmt.Errorf("connection refused"),
-            },
-        }
-        req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs?source_dir=/data", nil)
-        rr := httptest.NewRecorder()
-        s.HandleCreateJob(rr, req)
-        if rr.Code != http.StatusInternalServerError {
-            t.Errorf("got %d, want %d", rr.Code, http.StatusInternalServerError)
-        }
-    })
+	t.Run("db create fails returns 500", func(t *testing.T) {
+		s := &Server{
+			Jobs: make(map[string]context.CancelFunc),
+			GlobFn: func(pattern string) ([]string, error) {
+				return []string{"file1.pcap"}, nil
+			},
+			Store: &fakeJobStore{
+				createJobErr: fmt.Errorf("connection refused"),
+			},
+		}
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs?source_dir=/data", nil)
+		rr := httptest.NewRecorder()
+		s.HandleCreateJob(rr, req)
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("got %d, want %d", rr.Code, http.StatusInternalServerError)
+		}
+	})
 
-    t.Run("happy path returns 202 with correct body", func(t *testing.T) {
-        var wg sync.WaitGroup
-        wg.Add(1)
+	t.Run("happy path returns 202 with correct body", func(t *testing.T) {
+		var wg sync.WaitGroup
+		wg.Add(1)
 
-        s := &Server{
-            Jobs: make(map[string]context.CancelFunc),
-            GlobFn: func(pattern string) ([]string, error) {
-                return []string{"file1.pcap", "file2.pcap"}, nil
-            },
-            Store: &fakeJobStore{
-                createdJobID: fakeJobID,
-            },
-            Launcher: &fakeLauncher{
-                fn: func(ctx context.Context, jobID pgtype.UUID, paths []string) {
-                    defer wg.Done()
-                },
-            },
-        }
+		s := &Server{
+			Jobs: make(map[string]context.CancelFunc),
+			GlobFn: func(pattern string) ([]string, error) {
+				return []string{"file1.pcap", "file2.pcap"}, nil
+			},
+			Store: &fakeJobStore{
+				createdJobID: fakeJobID,
+			},
+			Launcher: &fakeLauncher{
+				fn: func(ctx context.Context, jobID pgtype.UUID, paths []string) {
+					defer wg.Done()
+				},
+			},
+		}
 
-        req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs?source_dir=/data", nil)
-        rr := httptest.NewRecorder()
-        s.HandleCreateJob(rr, req)
-        wg.Wait()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs?source_dir=/data", nil)
+		rr := httptest.NewRecorder()
+		s.HandleCreateJob(rr, req)
+		wg.Wait()
 
-        if rr.Code != http.StatusAccepted {
-            t.Errorf("got %d, want %d", rr.Code, http.StatusAccepted)
-        }
+		if rr.Code != http.StatusAccepted {
+			t.Errorf("got %d, want %d", rr.Code, http.StatusAccepted)
+		}
 
-        var response JobResponse
-        if err := json.NewDecoder(rr.Body).Decode(&response); err != nil {
-            t.Fatalf("failed to decode response: %v", err)
-        }
-        if response.Status != "PROCESSING" {
-            t.Errorf("got status %q, want %q", response.Status, "PROCESSING")
-        }
-        if response.TotalFiles != 2 {
-            t.Errorf("got total_files %d, want 2", response.TotalFiles)
-        }
-        if response.JobID != fakeJobID.String() {
-            t.Errorf("got job_id %q, want %q", response.JobID, fakeJobID.String())
-        }
-    })
+		var response JobResponse
+		if err := json.NewDecoder(rr.Body).Decode(&response); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+		if response.Status != "PROCESSING" {
+			t.Errorf("got status %q, want %q", response.Status, "PROCESSING")
+		}
+		if response.TotalFiles != 2 {
+			t.Errorf("got total_files %d, want 2", response.TotalFiles)
+		}
+		if response.JobID != fakeJobID.String() {
+			t.Errorf("got job_id %q, want %q", response.JobID, fakeJobID.String())
+		}
+	})
 }
 
 func TestDeleteJob(t *testing.T) {
-    jobID := pgtype.UUID{Bytes: [16]byte{0xe6, 0x47, 0xdf, 0x1f, 0xd8, 0xc0, 0x40, 0xe0, 0xa7, 0x07, 0x93, 0xed, 0x08, 0x79, 0xb0, 0xbe}, Valid: true}
-    jobIDStr := jobID.String()
+	jobID := pgtype.UUID{Bytes: [16]byte{0xe6, 0x47, 0xdf, 0x1f, 0xd8, 0xc0, 0x40, 0xe0, 0xa7, 0x07, 0x93, 0xed, 0x08, 0x79, 0xb0, 0xbe}, Valid: true}
+	jobIDStr := jobID.String()
 
-    chiCtx := func(id string) *http.Request {
-        req := httptest.NewRequest(http.MethodDelete, "/api/v1/jobs/"+id, nil)
-        rctx := chi.NewRouteContext()
-        rctx.URLParams.Add("job_id", id)
-        return req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
-    }
+	chiCtx := func(id string) *http.Request {
+		req := httptest.NewRequest(http.MethodDelete, "/api/v1/jobs/"+id, nil)
+		rctx := chi.NewRouteContext()
+		rctx.URLParams.Add("job_id", id)
+		return req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	}
 
-    t.Run("job not running returns 204", func(t *testing.T) {
-        s := &Server{
-            Jobs:  make(map[string]context.CancelFunc),
-            Store: &fakeJobStore{},
-        }
-        rr := httptest.NewRecorder()
-        s.HandleDeleteJob(rr, chiCtx(jobIDStr))
-        if rr.Code != http.StatusNoContent {
-            t.Errorf("got %d, want %d", rr.Code, http.StatusNoContent)
-        }
-    })
+	t.Run("job not running returns 204", func(t *testing.T) {
+		s := &Server{
+			Jobs:  make(map[string]context.CancelFunc),
+			Store: &fakeJobStore{},
+		}
+		rr := httptest.NewRecorder()
+		s.HandleDeleteJob(rr, chiCtx(jobIDStr))
+		if rr.Code != http.StatusNoContent {
+			t.Errorf("got %d, want %d", rr.Code, http.StatusNoContent)
+		}
+	})
 
-    t.Run("cancels running job and removes it from map", func(t *testing.T) {
-        cancelled := false
-        s := &Server{
-            Jobs: map[string]context.CancelFunc{
-                jobIDStr: func() { cancelled = true },
-            },
-            Store: &fakeJobStore{},
-        }
-        rr := httptest.NewRecorder()
-        s.HandleDeleteJob(rr, chiCtx(jobIDStr))
+	t.Run("cancels running job and removes it from map", func(t *testing.T) {
+		cancelled := false
+		s := &Server{
+			Jobs: map[string]context.CancelFunc{
+				jobIDStr: func() { cancelled = true },
+			},
+			Store: &fakeJobStore{},
+		}
+		rr := httptest.NewRecorder()
+		s.HandleDeleteJob(rr, chiCtx(jobIDStr))
 
-        if rr.Code != http.StatusNoContent {
-            t.Errorf("got %d, want %d", rr.Code, http.StatusNoContent)
-        }
-        if !cancelled {
-            t.Error("expected cancel to be called for running job")
-        }
-        s.JobsMu.Lock()
-        _, stillPresent := s.Jobs[jobIDStr]
-        s.JobsMu.Unlock()
-        if stillPresent {
-            t.Error("expected job to be removed from Jobs map after deletion")
-        }
-    })
+		if rr.Code != http.StatusNoContent {
+			t.Errorf("got %d, want %d", rr.Code, http.StatusNoContent)
+		}
+		if !cancelled {
+			t.Error("expected cancel to be called for running job")
+		}
+		s.JobsMu.Lock()
+		_, stillPresent := s.Jobs[jobIDStr]
+		s.JobsMu.Unlock()
+		if stillPresent {
+			t.Error("expected job to be removed from Jobs map after deletion")
+		}
+	})
 
-    t.Run("db error returns 500", func(t *testing.T) {
-        s := &Server{
-            Jobs:  make(map[string]context.CancelFunc),
-            Store: &fakeJobStore{err: fmt.Errorf("connection refused")},
-        }
-        rr := httptest.NewRecorder()
-        s.HandleDeleteJob(rr, chiCtx(jobIDStr))
-        if rr.Code != http.StatusInternalServerError {
-            t.Errorf("got %d, want %d", rr.Code, http.StatusInternalServerError)
-        }
-    })
+	t.Run("db error returns 500", func(t *testing.T) {
+		s := &Server{
+			Jobs:  make(map[string]context.CancelFunc),
+			Store: &fakeJobStore{err: fmt.Errorf("connection refused")},
+		}
+		rr := httptest.NewRecorder()
+		s.HandleDeleteJob(rr, chiCtx(jobIDStr))
+		if rr.Code != http.StatusInternalServerError {
+			t.Errorf("got %d, want %d", rr.Code, http.StatusInternalServerError)
+		}
+	})
 }

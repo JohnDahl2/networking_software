@@ -35,7 +35,7 @@ var validFields = map[string]bool{
 	"protocol":  true,
 	"length":    true,
 	"tcp_flags": true,
-	"job_id": true,
+	"job_id":    true,
 }
 
 var validExpressions = map[string]string{
@@ -56,7 +56,7 @@ type Packet struct {
 	Protocol  *string   `json:"protocol,omitempty"`
 	Length    *int      `json:"length,omitempty"`
 	TCPFlags  *int      `json:"tcp_flags,omitempty"`
-	JobID  *string   `json:"job_id,omitempty"`
+	JobID     *string   `json:"job_id,omitempty"`
 }
 
 type PaginationResponse struct {
@@ -115,27 +115,28 @@ func resolveFilters(filterSlice []string) ([]Filter, error) {
 	}
 	return filters, nil
 }
+
 var ErrInvalidLimit = errors.New("invalid limit")
 var ErrLimitOutOfRange = errors.New("limit out of range")
-var ErrInvalidField         = errors.New("invalid field") 
+var ErrInvalidField = errors.New("invalid field")
 var ErrCursor = errors.New("invalid cursor")
-var ErrOrder  = errors.New("invalid order")
+var ErrOrder = errors.New("invalid order")
 var ErrFilter = errors.New("invalid filter")
 
 type ListPacketsParams struct {
-    Limit   int
-    Columns []string
-    Cursor  *time.Time  // nil = no cursor
-    Order   string
-    Filters []Filter
+	Limit   int
+	Columns []string
+	Cursor  *time.Time // nil = no cursor
+	Order   string
+	Filters []Filter
 }
 
 type columnMapper struct {
-    scan  func(r *storage.PacketRow) any
-    mapTo func(r *storage.PacketRow, p *Packet)
+	scan  func(r *storage.PacketRow) any
+	mapTo func(r *storage.PacketRow, p *Packet)
 }
 
-func parseListPacketsParams(q url.Values) (ListPacketsParams, error){
+func parseListPacketsParams(q url.Values) (ListPacketsParams, error) {
 	var columnSlice []string
 	var cursor *time.Time
 	limitStr := q.Get("limit")
@@ -180,7 +181,7 @@ func parseListPacketsParams(q url.Values) (ListPacketsParams, error){
 	}, nil
 }
 
-func buildPacketQuery(q ListPacketsParams)(query string, outArgs []any){
+func buildPacketQuery(q ListPacketsParams) (query string, outArgs []any) {
 	args := make([]any, 0, len(q.Filters)+2)
 	whereClauses := make([]string, 0, len(q.Filters)+1)
 	argIdx := 1

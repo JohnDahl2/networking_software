@@ -164,7 +164,6 @@ func TestPacketSaverWorker_MultipleBatchesAccumulate(t *testing.T) {
 	}
 }
 
-
 func TestPacketSaverWorker_SlowWriteStillSavesCorrectly(t *testing.T) {
 	// A write that exceeds baseBackoffThreshold triggers the backoff branch.
 	// Verify the worker still reports the correct count and exits normally.

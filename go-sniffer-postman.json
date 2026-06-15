@@ -94,6 +94,18 @@
       ]
     },
     {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "url": "http://localhost:3000/api/v1/health"
+          }
+        }
+      ]
+    },
+    {
       "name": "Jobs",
       "item": [
         {

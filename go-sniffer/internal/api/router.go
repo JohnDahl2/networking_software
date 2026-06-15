@@ -60,6 +60,7 @@ func (s *Server) Router() http.Handler {
 			r.Get("/{job_id}", s.HandleGetJob)
 			r.Delete("/{job_id}", s.HandleDeleteJob)
 		})
+		r.Get("/health", s.HandleHealth)
 	})
 	return r
 }

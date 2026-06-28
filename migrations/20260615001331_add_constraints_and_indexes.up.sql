@@ -1,5 +1,3 @@
--- +goose Up
-
 -- Enforce that every job always has a status
 ALTER TABLE job_tracking
     ALTER COLUMN status SET NOT NULL;
@@ -12,12 +10,3 @@ ALTER TABLE packet_logs
 
 -- Index job_id so filtering packets by job is fast
 CREATE INDEX idx_packet_logs_job_id ON packet_logs (job_id);
-
--- +goose Down
-DROP INDEX IF EXISTS idx_packet_logs_job_id;
-
-ALTER TABLE packet_logs
-    DROP CONSTRAINT IF EXISTS fk_packet_logs_job_id;
-
-ALTER TABLE job_tracking
-    ALTER COLUMN status DROP NOT NULL;

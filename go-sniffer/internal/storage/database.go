@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"log/slog"
 	"net/netip"
 	"os"
@@ -17,11 +16,9 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/jackc/pgx/v5/stdlib"
-	"github.com/pressly/goose/v3"
 )
 
-func InitDB(ctx context.Context, connString string, migrationsFS fs.FS) (*pgxpool.Pool, error) {
+func InitDB(ctx context.Context, connString string) (*pgxpool.Pool, error) {
 	config, err := pgxpool.ParseConfig(connString)
 	if err != nil {
 		slog.Error("Database config parsing failed", "error", err)
@@ -44,31 +41,9 @@ func InitDB(ctx context.Context, connString string, migrationsFS fs.FS) (*pgxpoo
 		return nil, err
 	}
 
-	if err = RunMigrations(connString, migrationsFS); err != nil {
-		slog.Error("Schema migrations failed", "error", err)
-		return nil, err
-	}
-
 	return DB, nil
 }
 
-func RunMigrations(connString string, migrationsFS fs.FS) error {
-	pgxConfig, err := pgx.ParseConfig(connString)
-	if err != nil {
-		return err
-	}
-
-	dbConn := stdlib.OpenDB(*pgxConfig)
-	defer dbConn.Close() //nolint:errcheck
-
-	slog.Info("running database migrations")
-
-	if err := goose.SetDialect("postgres"); err != nil {
-		return err
-	}
-	goose.SetBaseFS(migrationsFS)
-	return goose.Up(dbConn, ".")
-}
 
 type PacketRow struct {
 	Time     time.Time   `db:"time"`

@@ -16,7 +16,6 @@ import (
 	"go-sniffer/internal/api"
 	"go-sniffer/internal/storage"
 	"go-sniffer/internal/worker"
-	"go-sniffer/migrations"
 )
 
 type Config struct {
@@ -55,7 +54,7 @@ func main() {
 	}
 
 	slog.Info("Connecting to TimescaleDB Pool...")
-	DB, err := storage.InitDB(context.Background(), connString, migrations.Files)
+	DB, err := storage.InitDB(context.Background(), connString)
 	if err != nil {
 		slog.Error("Failed to initialize database pool, terminating", "error", err)
 		os.Exit(1)

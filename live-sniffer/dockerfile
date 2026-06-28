@@ -1,5 +1,5 @@
 # ==========================================
-# STAGE 1: Build the Go Application
+# STAGE 1: Build the Go Application & Goose
 # ==========================================
 FROM golang:1.25-bookworm AS builder
 
@@ -19,7 +19,10 @@ RUN go mod download
 COPY . .
 
 # Build a highly optimized, statically-linked production binary
-RUN CGO_ENABLED=1 GOOS=linux go build -ldflags="-w -s" -o sniffer ./cmd/sniffer
+RUN CGO_ENABLED=1 GOOS=linux go build -ldflags="-w -s" -o live ./cmd/live
+
+# Download the Goose binary separately so we can grab it in the next stage
+RUN GOBIN=/app/bin go install github.com/pressly/goose/v3/cmd/goose@v3.21.1
 
 # ==========================================
 # STAGE 2: Lightweight Runtime Environment
@@ -34,9 +37,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Copy only the compiled artifacts from the builder stage
-COPY --from=builder /app/sniffer .
+COPY --from=builder /app/live .
+COPY --from=builder /app/bin/goose /usr/local/bin/goose
 
 # Ensure the executable permissions are correct
 RUN chmod +x ./sniffer
 
-CMD ["./sniffer"]
+CMD ["./live"]

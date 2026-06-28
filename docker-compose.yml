@@ -1,4 +1,13 @@
 services:
+  migrate:
+    image: migrate/migrate
+    volumes:
+      - ./migrations:/migrations
+    command: ["-path=/migrations", "-database=postgresql://postgres:password@db:5432/packets?sslmode=disable", "up"]
+    depends_on:
+      db:
+        condition: service_healthy
+
   sniffer:
     build: ./go-sniffer
     container_name: packet_sniffer_go
@@ -9,10 +18,11 @@ services:
       - .env
     volumes:
       - ./go-sniffer/data:/app/data
-      - ./go-sniffer/migrations:/app/migrations
     depends_on:
       db:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully 
 
   db:
     image: timescale/timescaledb:latest-pg16

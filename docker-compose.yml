@@ -9,7 +9,9 @@ services:
         condition: service_healthy
 
   sniffer:
-    build: ./go-sniffer
+    build:
+      context: .
+      dockerfile: go-sniffer/Dockerfile
     container_name: packet_sniffer_go
     restart: unless-stopped
     ports:

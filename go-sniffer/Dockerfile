@@ -10,16 +10,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Leverage Docker caching: Copy and download dependencies first.
-# This prevents downloading your modules again if your source code changes!
-COPY go.mod go.sum ./
-RUN go mod download
+# Copy shared module first (build context is repo root)
+COPY shared/ ./shared/
 
-# Copy the rest of your Go source code
-COPY . .
+# Copy go-sniffer and download dependencies
+COPY go-sniffer/go.mod go-sniffer/go.sum ./go-sniffer/
+RUN cd go-sniffer && go mod download
 
-# Build a highly optimized, statically-linked production binary
-RUN CGO_ENABLED=1 GOOS=linux go build -ldflags="-w -s" -o sniffer ./cmd/sniffer
+# Copy the rest of go-sniffer source
+COPY go-sniffer/ ./go-sniffer/
+
+# Build from the go-sniffer directory
+RUN cd go-sniffer && CGO_ENABLED=1 GOOS=linux go build -ldflags="-w -s" -o ../sniffer ./cmd/sniffer
 
 # ==========================================
 # STAGE 2: Lightweight Runtime Environment

@@ -1,7 +1,7 @@
 # ==========================================
-# STAGE 1: Build the Go Application & Goose
+# STAGE 1: Build the Go Application
 # ==========================================
-FROM golang:1.25-bookworm AS builder
+FROM golang:1.26-bookworm AS builder
 
 # Install libpcap headers needed to COMPILE gopacket
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -10,19 +10,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Leverage Docker caching: Copy and download dependencies first.
-# This prevents downloading your modules again if your source code changes!
-COPY go.mod go.sum ./
-RUN go mod download
+# Copy shared module first (build context is repo root)
+COPY shared/ ./shared/
 
-# Copy the rest of your Go source code
-COPY . .
+# Copy live-sniffer and download dependencies
+COPY live-sniffer/go.mod live-sniffer/go.sum ./live-sniffer/
+RUN cd live-sniffer && go mod download
 
-# Build a highly optimized, statically-linked production binary
-RUN CGO_ENABLED=1 GOOS=linux go build -ldflags="-w -s" -o live ./cmd/live
+# Copy the rest of live-sniffer source
+COPY live-sniffer/ ./live-sniffer/
 
-# Download the Goose binary separately so we can grab it in the next stage
-RUN GOBIN=/app/bin go install github.com/pressly/goose/v3/cmd/goose@v3.21.1
+# Build from the live-sniffer directory
+RUN cd live-sniffer && CGO_ENABLED=1 GOOS=linux go build -ldflags="-w -s" -o ../live ./cmd/live
 
 # ==========================================
 # STAGE 2: Lightweight Runtime Environment
@@ -36,11 +35,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Copy only the compiled artifacts from the builder stage
 COPY --from=builder /app/live .
-COPY --from=builder /app/bin/goose /usr/local/bin/goose
 
-# Ensure the executable permissions are correct
-RUN chmod +x ./sniffer
+RUN chmod +x ./live
 
-CMD ["./live"]
+CMD ["./live", "start"]

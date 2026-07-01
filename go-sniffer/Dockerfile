@@ -1,7 +1,7 @@
 # ==========================================
 # STAGE 1: Build the Go Application
 # ==========================================
-FROM golang:1.25-bookworm AS builder
+FROM golang:1.26-bookworm AS builder
 
 # Install libpcap headers needed to COMPILE gopacket
 RUN apt-get update && apt-get install -y --no-install-recommends \

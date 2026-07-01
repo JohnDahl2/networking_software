@@ -51,7 +51,7 @@ func (l *Launcher) StartPipeline(ctx context.Context, iface string, workerSaverC
 	}
 
 	for w := 1; w <= workerSaverCount; w++ {
-		go workers.PacketSaverWorker(ctx, l.DB, sessionID, &totalSaved, w, packetStream, finalCounts, cancel, onFailure)
+		go workers.PacketSaverWorker(ctx, l.DB, &totalSaved, w, packetStream, finalCounts, cancel, onFailure)
 	}
 	go networkwatcher.ListenOnNetwork(ctx, ps, sessionID, packetStream, 500)
 	store.UpdateSession(ctx, sessionID, storage.StatusRunning)

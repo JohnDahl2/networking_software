@@ -33,23 +33,7 @@ func PacketSaverWorker(
 
 	currentBackoff := minBackoff
 
-	var lastActiveBatch []storage.PacketRow
 	defer func() {
-		// Final emergency flush handling if channels close or context is cut
-		if len(lastActiveBatch) > 0 {
-			flushCtx, flushCancel := context.WithTimeout(context.Background(), 2*time.Second)
-			defer flushCancel()
-			now := time.Now()
-			if err := storage.BulkDatabaseCopy(flushCtx, DB, lastActiveBatch); err == nil {
-				batchSize := len(lastActiveBatch)
-				localSaved += batchSize
-				atomic.AddInt64(totalSaved, int64(batchSize))
-				log.Debug("emergency database flush succeeded during shutdown", "flushed_count", batchSize)
-			} else {
-				storage.UpdateJobStatus(ctx, DB, jobID, "FAILED", &now) //nolint:errcheck
-				log.Error("emergency database flush failed during shutdown", "error", err.Error())
-			}
-		}
 		results <- localSaved
 	}()
 
@@ -61,11 +45,9 @@ func PacketSaverWorker(
 		case incomingBatch, ok := <-packetStream:
 			if !ok {
 				log.Debug("packet data stream closed; saver exiting normally")
-				lastActiveBatch = nil
 				return
 			}
 
-			lastActiveBatch = incomingBatch
 			batchSize := len(incomingBatch)
 
 			writeStart := time.Now()
@@ -74,7 +56,6 @@ func PacketSaverWorker(
 				now := time.Now()
 				storage.UpdateJobStatus(ctx, DB, jobID, "FAILED", &now) //nolint:errcheck
 				log.Error("critical database batch write failure; triggering pipeline abort", "error", err.Error())
-				lastActiveBatch = nil
 				cancel()
 				return
 			}
@@ -84,7 +65,6 @@ func PacketSaverWorker(
 			localSaved += batchSize
 			atomic.AddInt64(totalSaved, int64(batchSize))
 
-			lastActiveBatch = nil
 			if writeDuration > baseBackoffThreshold {
 				currentBackoff = currentBackoff * multiplier
 				if currentBackoff > maxBackoff {

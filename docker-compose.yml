@@ -1,6 +1,17 @@
 services:
+  migrate:
+    image: migrate/migrate
+    volumes:
+      - ./migrations:/migrations
+    command: ["-path=/migrations", "-database=postgresql://postgres:password@db:5432/packets?sslmode=disable", "up"]
+    depends_on:
+      db:
+        condition: service_healthy
+
   sniffer:
-    build: ./go-sniffer
+    build:
+      context: .
+      dockerfile: go-sniffer/Dockerfile
     container_name: packet_sniffer_go
     restart: unless-stopped
     ports:
@@ -9,10 +20,11 @@ services:
       - .env
     volumes:
       - ./go-sniffer/data:/app/data
-      - ./go-sniffer/migrations:/app/migrations
     depends_on:
       db:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully 
 
   db:
     image: timescale/timescaledb:latest-pg16
@@ -40,6 +52,24 @@ services:
       "-c", "checkpoint_completion_target=0.9",
       "-c", "max_wal_size=4GB"
     ]
+
+  live-sniffer:
+    build:
+      context: .
+      dockerfile: live-sniffer/dockerfile
+    container_name: packet_live_sniffer
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://postgres:password@db:5432/packets?sslmode=disable
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    command: ["./live", "start", "-i", "eth0"]
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
   ui:
     build: ./python-ui

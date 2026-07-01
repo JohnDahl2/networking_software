@@ -1,4 +1,3 @@
--- +goose Up
 CREATE TABLE job_tracking (
     job_id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     status          text,
@@ -8,6 +7,3 @@ CREATE TABLE job_tracking (
     total_files     INTEGER,
     files_read      INTEGER
 );
-
--- +goose Down
-DROP TABLE IF EXISTS job_tracking CASCADE;

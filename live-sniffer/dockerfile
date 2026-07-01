@@ -13,15 +13,15 @@ WORKDIR /app
 # Copy shared module first (build context is repo root)
 COPY shared/ ./shared/
 
-# Copy go-sniffer and download dependencies
-COPY go-sniffer/go.mod go-sniffer/go.sum ./go-sniffer/
-RUN cd go-sniffer && go mod download
+# Copy live-sniffer and download dependencies
+COPY live-sniffer/go.mod live-sniffer/go.sum ./live-sniffer/
+RUN cd live-sniffer && go mod download
 
-# Copy the rest of go-sniffer source
-COPY go-sniffer/ ./go-sniffer/
+# Copy the rest of live-sniffer source
+COPY live-sniffer/ ./live-sniffer/
 
-# Build from the go-sniffer directory
-RUN cd go-sniffer && CGO_ENABLED=1 GOOS=linux go build -ldflags="-w -s" -o ../sniffer ./cmd/sniffer
+# Build from the live-sniffer directory
+RUN cd live-sniffer && CGO_ENABLED=1 GOOS=linux go build -ldflags="-w -s" -o ../live ./cmd/live
 
 # ==========================================
 # STAGE 2: Lightweight Runtime Environment
@@ -35,10 +35,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Copy only the compiled artifacts from the builder stage
-COPY --from=builder /app/sniffer .
+COPY --from=builder /app/live .
 
-# Ensure the executable permissions are correct
-RUN chmod +x ./sniffer
+RUN chmod +x ./live
 
-CMD ["./sniffer"]
+CMD ["./live", "start"]

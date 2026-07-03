@@ -35,6 +35,9 @@ func ListenOnNetwork(ctx context.Context, packetSource *gopacket.PacketSource, s
         }
         
         row := ingestion.PacketDecoder(sessionID, packet)
+        if !row.SrcIP.IsValid() || !row.DstIP.IsValid() {
+            continue
+        }
         batch = append(batch, row)
         
         if len(batch) >= batchSize {

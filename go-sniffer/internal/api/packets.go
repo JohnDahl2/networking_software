@@ -259,11 +259,11 @@ var columnMappers = map[string]columnMapper{
 		mapTo: func(r *storage.PacketRow, p *Packet) { v := int(r.TCPFlags); p.TCPFlags = &v },
 	},
 	"job_id": {
-		scan: func(r *storage.PacketRow) any { return &r.JobID },
+		scan: func(r *storage.PacketRow) any { return &r.SourceID },
 		mapTo: func(r *storage.PacketRow, p *Packet) {
 			var sid string
-			if r.JobID.Valid {
-				sid = r.JobID.String()
+			if r.SourceID.Valid {
+				sid = r.SourceID.String()
 			}
 			p.JobID = &sid
 		},

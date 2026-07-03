@@ -125,7 +125,7 @@ func PcapWorker(ctx context.Context, DB storage.DBStore, jobID pgtype.UUID, tota
 					Protocol: protocol,
 					Length:   int32(captureInfo.Length),
 					TCPFlags: tcpFlags,
-					JobID:    jobID,
+					SourceID: jobID,
 				}
 
 				currentBatch = append(currentBatch, row)

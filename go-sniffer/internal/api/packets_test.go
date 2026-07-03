@@ -648,7 +648,7 @@ func TestPacketQueryDb(t *testing.T) {
 				Protocol: "TCP",
 				Length:   64,
 				TCPFlags: 2,
-				JobID:    jobID,
+				SourceID: jobID,
 			}},
 			scanFn: func(row storage.PacketRow, dest []any) error {
 				*dest[0].(*time.Time) = row.Time
@@ -659,7 +659,7 @@ func TestPacketQueryDb(t *testing.T) {
 				*dest[5].(*string) = row.Protocol
 				*dest[6].(*int32) = row.Length
 				*dest[7].(*int16) = row.TCPFlags
-				*dest[8].(*pgtype.UUID) = row.JobID
+				*dest[8].(*pgtype.UUID) = row.SourceID
 				return nil
 			},
 		}

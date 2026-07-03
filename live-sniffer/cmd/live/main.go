@@ -6,6 +6,7 @@ import (
 	"live-sniffer/internal/config"
 	"live-sniffer/internal/pipeline"
 	"live-sniffer/internal/storage"
+	"live-sniffer/migrations"
 	"log/slog"
 	"os"
 
@@ -13,9 +14,11 @@ import (
 )
 
 var (
-	iface     string
-	workers   int
-	sessionID string
+	iface        string
+	workers      int
+	sessionID    string
+	initDBUrl    string
+	initIface    string
 )
 var launcher *pipeline.Launcher
 
@@ -44,6 +47,10 @@ var configSetCmd = &cobra.Command{
 		switch key {
 		case "db-url":
 			cfg.DBUrl = val
+			if err = migrations.RunMigrations(cfg.DBUrl); err != nil {
+				slog.Error("migrations failed", "error", err)
+				os.Exit(1)
+			}
 		case "interface":
 			cfg.DefaultInterface = val
 		default:
@@ -55,6 +62,26 @@ var configSetCmd = &cobra.Command{
 			os.Exit(1)
 		}
 		slog.Info("config updated", "key", key, "value", val)
+	},
+}
+
+var configInitCmd = &cobra.Command{
+	Use:   "init",
+	Short: "Set db-url and interface together and run migrations",
+	Run: func(cmd *cobra.Command, args []string) {
+		if initDBUrl == "" {
+			slog.Error("--db-url is required")
+			os.Exit(1)
+		}
+		if err := migrations.RunMigrations(initDBUrl); err != nil {
+			slog.Error("migrations failed", "error", err)
+			os.Exit(1)
+		}
+		if err := config.SaveConfig(initDBUrl, initIface); err != nil {
+			slog.Error("failed to save config", "error", err)
+			os.Exit(1)
+		}
+		slog.Info("config saved and migrations complete")
 	},
 }
 
@@ -98,7 +125,11 @@ func init() {
 	startCmd.Flags().IntVarP(&workers, "workers", "w", 2, "number of saver workers")
 	stopCmd.Flags().StringVarP(&sessionID, "session", "s", "", "session ID to stop")
 
+	configInitCmd.Flags().StringVar(&initDBUrl, "db-url", "", "database connection URL (required)")
+	configInitCmd.Flags().StringVar(&initIface, "interface", "", "default network interface")
+
 	configCmd.AddCommand(configSetCmd)
+	configCmd.AddCommand(configInitCmd)
 
 	rootCmd.AddCommand(startCmd)
 	rootCmd.AddCommand(stopCmd)
@@ -108,15 +139,13 @@ func init() {
 
 func main() {
 	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
-		// config set doesn't need a DB connection
-		if cmd.Name() == "set" {
+		if cmd.Name() == "set" || cmd.Name() == "init" {
 			return nil
 		}
 		cfg, err := config.ReadConfig()
 		if err != nil {
 			return fmt.Errorf("could not read config: run 'nls config set db-url <your-db-url>' first")
 		}
-		// use flag value if provided, otherwise fall back to config default
 		if iface == "" {
 			iface = cfg.DefaultInterface
 		}

@@ -27,7 +27,7 @@ type PacketRow struct {
 	Protocol string      `db:"protocol"`
 	Length   int32       `db:"length"`
 	TCPFlags int16       `db:"tcp_flags"`
-	JobID    pgtype.UUID `db:"job_id"`
+	SourceID pgtype.UUID `db:"source_id"`
 }
 
 // InitDB creates and returns a configured connection pool.
@@ -68,14 +68,14 @@ func BulkDatabaseCopy(ctx context.Context, db BulkWriter, rows []PacketRow) erro
 		inputRows[i] = []any{
 			row.Time, row.SrcIP.String(), row.DstIP.String(),
 			row.SrcPort, row.DstPort, row.Protocol,
-			row.Length, row.TCPFlags, row.JobID,
+			row.Length, row.TCPFlags, row.SourceID,
 		}
 	}
 
 	_, err := db.CopyFrom(
 		ctx,
 		pgx.Identifier{"packet_logs"},
-		[]string{"time", "src_ip", "dst_ip", "src_port", "dst_port", "protocol", "length", "tcp_flags", "job_id"},
+		[]string{"time", "src_ip", "dst_ip", "src_port", "dst_port", "protocol", "length", "tcp_flags", "source_id"},
 		pgx.CopyFromRows(inputRows),
 	)
 	return err

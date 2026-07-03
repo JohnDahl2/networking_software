@@ -62,7 +62,7 @@ func PacketDecoder(sessionId pgtype.UUID, packet gopacket.Packet)storage.PacketR
 		Protocol: protocol,
 		Length:   int32(packet.Metadata().CaptureInfo.Length),
 		TCPFlags: tcpFlags,
-		JobID:    sessionId,
+		SourceID: sessionId,
 	}
 	return row
 }

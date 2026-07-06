@@ -17,7 +17,13 @@ const (
 	configFolder = ".config"
 	nls = "nls"
 	config = "config.yaml"
+	sock = "nls.sock"
 )
+
+func SockPath() string{
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, configFolder, nls, sock)
+}
 
 func configPath() string{
 	home, _ := os.UserHomeDir()

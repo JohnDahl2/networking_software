@@ -12,6 +12,7 @@ const (
 type Request struct {
     Command   Command `json:"command"`
     Interface string  `json:"interface,omitempty"` 
+	Workers   int     `json:"workers,omitempty"`
     SessionID string  `json:"session_id,omitempty"`
 }
 

@@ -55,6 +55,8 @@ func (s *Server) Router() http.Handler {
 			r.Get("/", s.HandleListPackets)
 		})
 		r.Route("/jobs", func(r chi.Router) {
+			rl := NewRateLimit(10.0,10.0)
+			r.Use(rl.Middleware())
 			r.Get("/", s.HandleListJobs)
 			r.Post("/", s.HandleCreateJob)
 			r.Get("/{job_id}", s.HandleGetJob)

@@ -7,9 +7,12 @@ import (
 	"live-sniffer/internal/proto"
 	"live-sniffer/internal/storage"
 	"live-sniffer/internal/workers"
+	"log/slog"
+	"os"
 	"sync"
 	"time"
 
+	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -29,8 +32,17 @@ func (l *Launcher) StartPipeline(ctx context.Context, iface string, workerSaverC
     }
 
 	var totalSaved int64
-	finalCounts := make(chan int, workerSaverCount)
-	packetStream := make(chan []storage.PacketRow, 100)
+
+	kafkaURL := os.Getenv("KAFKA_URL")
+	kafkaTopic := os.Getenv("KAFKA_TOPIC")
+	
+	producer, err := kafka.NewProducer(&kafka.ConfigMap{
+		"bootstrap.servers": kafkaURL,
+	})
+	if err != nil {
+		slog.Error("Issue with starting the producer", "error", err)
+		return sessionIDString, err
+	}
 
 	ctx, cancel := context.WithCancel(ctx)
 
@@ -54,9 +66,19 @@ func (l *Launcher) StartPipeline(ctx context.Context, iface string, workerSaverC
 	}
 
 	for w := 1; w <= workerSaverCount; w++ {
-		go workers.PacketSaverWorker(ctx, l.DB, &totalSaved, w, packetStream, finalCounts, cancel, onFailure)
+		consumer, err := kafka.NewConsumer(&kafka.ConfigMap{
+			"bootstrap.servers": kafkaURL,
+			"group.id": "packet-savers",
+			"auto.offset.reset": "earliest",
+		})
+		if err != nil {
+			return sessionIDString, err
+		}
+		consumer.SubscribeTopics([]string{kafkaTopic}, nil)
+		go workers.PacketSaverWorker(ctx, l.DB, &totalSaved, w, consumer, cancel, onFailure)
 	}
-	go networkwatcher.ListenOnNetwork(ctx, ps, sessionID, packetStream, 500)
+
+	go networkwatcher.ListenOnNetwork(ctx, ps, sessionID, producer, kafkaTopic, 500)
 	store.UpdateSession(ctx, sessionID, storage.StatusRunning)
 
 	return sessionIDString, nil

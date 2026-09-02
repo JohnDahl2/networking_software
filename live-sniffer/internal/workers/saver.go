@@ -2,11 +2,14 @@ package workers
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"sync/atomic"
 	"time"
 
 	"live-sniffer/internal/storage"
+
+	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
 
 const (
@@ -21,8 +24,7 @@ func PacketSaverWorker(
 	DB storage.DBStore,
 	totalSaved *int64,
 	id int,
-	packetStream <-chan []storage.PacketRow,
-	results chan<- int,
+	consumer *kafka.Consumer, 
 	cancel context.CancelFunc,
 	onFailure func(),
 ) {
@@ -31,26 +33,30 @@ func PacketSaverWorker(
 
 	currentBackoff := minBackoff
 
-	defer func() {
-		results <- localSaved
-	}()
-
 	for {
 		select {
 		case <-ctx.Done():
 			log.Warn("pipeline context cancelled; initiating graceful shutdown sequence")
 			return
-		case incomingBatch, ok := <-packetStream:
-			if !ok {
-				log.Debug("packet data stream closed; saver exiting normally")
-				return
+		default: 
+			msg, err := consumer.ReadMessage(100 * time.Millisecond)
+			if err != nil {
+				if kafkaErr, ok := err.(kafka.Error); ok && kafkaErr.Code() == kafka.ErrTimedOut {
+					continue
+				}
+				log.Warn("kafka read error", "error", err)
+				continue  // don't return on read errors, keep trying
 			}
-
-			batchSize := len(incomingBatch)
+			var batch []storage.PacketRow
+			if err := json.Unmarshal(msg.Value, &batch); err != nil {
+				log.Warn("failed to unmarshal batch", "error", err)
+				continue
+			}
+			batchSize := len(batch)
 
 			writeStart := time.Now()
 
-			if err := storage.BulkDatabaseCopy(ctx, DB, incomingBatch); err != nil {
+			if err := storage.BulkDatabaseCopy(ctx, DB, batch); err != nil {
 				onFailure()
 				log.Error("critical database batch write failure; triggering pipeline abort", "error", err.Error())
 				cancel()

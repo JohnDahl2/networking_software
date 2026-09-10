@@ -79,5 +79,16 @@ services:
       db:
         condition: service_healthy
 
+  mcp:
+    build: ./mcp
+    container_name: network_mcp
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      GO_SNIFFER_URL: http://sniffer:3000
+    depends_on:
+      - sniffer
+
 volumes:
   db_data:
